@@ -15,11 +15,8 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
-<<<<<<< Updated upstream:src/main/java/com/example/spring_boot_project_api/model/Amenity.java
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-=======
->>>>>>> Stashed changes:src/main/java/com/example/spring_boot_project_api/model/RoomType.java
 import lombok.Data;
 import lombok.NoArgsConstructor;
 @Data
