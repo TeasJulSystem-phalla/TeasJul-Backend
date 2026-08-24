@@ -27,6 +27,7 @@ public class Room {
     private Long id;
 
     @Column(name = "owner_id", nullable = false)
+    
     private Long ownerId;
 
     @Column(name = "house_id", nullable = false)
