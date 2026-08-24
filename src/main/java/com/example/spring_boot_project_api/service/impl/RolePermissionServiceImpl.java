@@ -1,0 +1,127 @@
+package com.example.spring_boot_project_api.service.impl;
+
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.example.spring_boot_project_api.dto.request.ReplaceRolePermissionsRequest;
+import com.example.spring_boot_project_api.dto.response.PermissionResponse;
+import com.example.spring_boot_project_api.exception.DuplicateResourceException;
+import com.example.spring_boot_project_api.exception.PermissionNotFoundException;
+import com.example.spring_boot_project_api.exception.RoleNotFoundException;
+import com.example.spring_boot_project_api.exception.RolePermissionNotFoundException;
+import com.example.spring_boot_project_api.mapper.PermissionMapper;
+import com.example.spring_boot_project_api.model.Permission;
+import com.example.spring_boot_project_api.model.Role;
+import com.example.spring_boot_project_api.model.RolePermission;
+import com.example.spring_boot_project_api.model.RolePermissionId;
+import com.example.spring_boot_project_api.repository.PermissionRepository;
+import com.example.spring_boot_project_api.repository.RolePermissionRepository;
+import com.example.spring_boot_project_api.repository.RoleRepository;
+import com.example.spring_boot_project_api.service.RolePermissionService;
+
+import lombok.RequiredArgsConstructor;
+
+@Service
+@RequiredArgsConstructor
+public class RolePermissionServiceImpl implements RolePermissionService {
+
+    private final RolePermissionRepository rolePermissionRepository;
+    private final RoleRepository roleRepository;
+    private final PermissionRepository permissionRepository;
+    private final PermissionMapper permissionMapper;
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PermissionResponse> getRolePermissions(Long roleId) {
+        getRoleOrThrow(roleId);
+
+        return rolePermissionRepository.findByRoleId(roleId).stream()
+                .map(assignment -> permissionMapper.toResponse(assignment.getPermission()))
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public PermissionResponse assignPermissionToRole(Long roleId, Long permissionId) {
+        Role role = getRoleOrThrow(roleId);
+        Permission permission = getPermissionOrThrow(permissionId);
+
+        if (rolePermissionRepository.existsByRoleIdAndPermissionId(roleId, permissionId)) {
+            throw new DuplicateResourceException("Permission " + permission.getCode()
+                    + " is already assigned to role " + role.getCode());
+        }
+
+        RolePermission assignment = RolePermission.builder()
+                .id(new RolePermissionId(roleId, permissionId))
+                .role(role)
+                .permission(permission)
+                .build();
+
+        return permissionMapper.toResponse(
+                rolePermissionRepository.saveAndFlush(assignment).getPermission());
+    }
+
+    @Override
+    @Transactional
+    public void removePermissionFromRole(Long roleId, Long permissionId) {
+        getRoleOrThrow(roleId);
+
+        if (!rolePermissionRepository.existsByRoleIdAndPermissionId(roleId, permissionId)) {
+            throw RolePermissionNotFoundException.forIds(roleId, permissionId);
+        }
+
+        rolePermissionRepository.deleteByRoleIdAndPermissionId(roleId, permissionId);
+    }
+
+    @Override
+    @Transactional
+    public List<PermissionResponse> replaceRolePermissions(Long roleId,
+            ReplaceRolePermissionsRequest request) {
+        Role role = getRoleOrThrow(roleId);
+
+        Set<Long> permissionIds = new LinkedHashSet<>(request.permissionIds());
+
+        Map<Long, Permission> permissionsById = permissionRepository.findAllById(permissionIds).stream()
+                .collect(Collectors.toMap(Permission::getId, Function.identity()));
+
+        permissionIds.stream()
+                .filter(id -> !permissionsById.containsKey(id))
+                .findFirst()
+                .ifPresent(id -> {
+                    throw PermissionNotFoundException.forId(id);
+                });
+
+        rolePermissionRepository.deleteByRoleId(roleId);
+
+        List<RolePermission> assignments = permissionIds.stream()
+                .map(permissionId -> RolePermission.builder()
+                        .id(new RolePermissionId(roleId, permissionId))
+                        .role(role)
+                        .permission(permissionsById.get(permissionId))
+                        .build())
+                .toList();
+
+        rolePermissionRepository.saveAll(assignments);
+
+        return assignments.stream()
+                .map(assignment -> permissionMapper.toResponse(assignment.getPermission()))
+                .toList();
+    }
+
+    private Role getRoleOrThrow(Long roleId) {
+        return roleRepository.findById(roleId)
+                .orElseThrow(() -> RoleNotFoundException.forId(roleId));
+    }
+
+    private Permission getPermissionOrThrow(Long permissionId) {
+        return permissionRepository.findById(permissionId)
+                .orElseThrow(() -> PermissionNotFoundException.forId(permissionId));
+    }
+}

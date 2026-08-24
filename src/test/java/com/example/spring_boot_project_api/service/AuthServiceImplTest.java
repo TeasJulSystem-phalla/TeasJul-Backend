@@ -1,0 +1,173 @@
+package com.example.spring_boot_project_api.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.time.LocalDateTime;
+import java.util.Optional;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Spy;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+import com.example.spring_boot_project_api.dto.request.LoginRequest;
+import com.example.spring_boot_project_api.dto.request.RegisterRequest;
+import com.example.spring_boot_project_api.dto.response.LoginResponse;
+import com.example.spring_boot_project_api.dto.response.UserResponse;
+import com.example.spring_boot_project_api.exception.DuplicateResourceException;
+import com.example.spring_boot_project_api.mapper.UserMapper;
+import com.example.spring_boot_project_api.model.User;
+import com.example.spring_boot_project_api.model.UserStatus;
+import com.example.spring_boot_project_api.repository.UserRepository;
+import com.example.spring_boot_project_api.service.impl.AuthServiceImpl;
+import com.example.spring_boot_project_api.util.JwtUtil;
+
+@ExtendWith(MockitoExtension.class)
+class AuthServiceImplTest {
+
+    private static final String RAW_PASSWORD = "Password123";
+    private static final String HASHED_PASSWORD = "$2a$10$hashedpasswordhashedsome";
+
+    @Mock
+    private UserRepository userRepository;
+
+    @Mock
+    private UserService userService;
+
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private JwtUtil jwtUtil;
+
+    @Spy
+    private UserMapper userMapper = new UserMapper();
+
+    @InjectMocks
+    private AuthServiceImpl authService;
+
+    private RegisterRequest registerRequest() {
+        return new RegisterRequest("johndoe", "john@example.com", RAW_PASSWORD,
+                "John", "Doe", "+1234567890");
+    }
+
+    private User savedUser() {
+        return User.builder()
+                .id(1L)
+                .username("johndoe")
+                .email("john@example.com")
+                .passwordHash(HASHED_PASSWORD)
+                .firstName("John")
+                .lastName("Doe")
+                .phone("+1234567890")
+                .status(UserStatus.ACTIVE)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+    }
+
+    @Test
+    void registerShouldEncodePasswordAndReturnCreatedUser() {
+        RegisterRequest request = registerRequest();
+        when(userRepository.existsByUsername("johndoe")).thenReturn(false);
+        when(userRepository.existsByEmail("john@example.com")).thenReturn(false);
+        when(passwordEncoder.encode(RAW_PASSWORD)).thenReturn(HASHED_PASSWORD);
+        when(userService.createUser(any(User.class))).thenReturn(savedUser());
+
+        UserResponse response = authService.register(request);
+
+        assertThat(response.id()).isEqualTo(1L);
+        assertThat(response.username()).isEqualTo("johndoe");
+        assertThat(response.email()).isEqualTo("john@example.com");
+        assertThat(response.status()).isEqualTo(UserStatus.ACTIVE);
+
+        verify(passwordEncoder).encode(RAW_PASSWORD);
+        verify(userService).createUser(any(User.class));
+    }
+
+    @Test
+    void registerShouldRejectDuplicateUsername() {
+        when(userRepository.existsByUsername("johndoe")).thenReturn(true);
+
+        assertThatThrownBy(() -> authService.register(registerRequest()))
+                .isInstanceOf(DuplicateResourceException.class)
+                .hasMessageContaining("Username is already taken");
+    }
+
+    @Test
+    void registerShouldRejectDuplicateEmail() {
+        when(userRepository.existsByUsername("johndoe")).thenReturn(false);
+        when(userRepository.existsByEmail("john@example.com")).thenReturn(true);
+
+        assertThatThrownBy(() -> authService.register(registerRequest()))
+                .isInstanceOf(DuplicateResourceException.class)
+                .hasMessageContaining("Email is already registered");
+    }
+
+    @Test
+    void loginShouldReturnTokenAndRecordLastLogin() {
+        LoginRequest request = new LoginRequest("johndoe", RAW_PASSWORD);
+        User user = savedUser();
+        when(userRepository.findByUsername("johndoe")).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches(RAW_PASSWORD, HASHED_PASSWORD)).thenReturn(true);
+        when(jwtUtil.generateToken("johndoe")).thenReturn("jwt-token-value");
+        when(jwtUtil.getExpirationMs()).thenReturn(900000L);
+        when(userService.createUser(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LoginResponse response = authService.login(request);
+
+        assertThat(response.token()).isEqualTo("jwt-token-value");
+        assertThat(response.tokenType()).isEqualTo("Bearer");
+        assertThat(response.expiresIn()).isEqualTo(900000L);
+        assertThat(response.user().username()).isEqualTo("johndoe");
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userService).createUser(captor.capture());
+        assertThat(captor.getValue().getLastLoginAt()).isNotNull();
+    }
+
+    @Test
+    void loginByEmailShouldSucceed() {
+        LoginRequest request = new LoginRequest("john@example.com", RAW_PASSWORD);
+        when(userRepository.findByUsername("john@example.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("john@example.com")).thenReturn(Optional.of(savedUser()));
+        when(passwordEncoder.matches(RAW_PASSWORD, HASHED_PASSWORD)).thenReturn(true);
+        when(jwtUtil.generateToken("johndoe")).thenReturn("jwt-token-value");
+        when(jwtUtil.getExpirationMs()).thenReturn(900000L);
+        when(userService.createUser(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LoginResponse response = authService.login(request);
+
+        assertThat(response.token()).isEqualTo("jwt-token-value");
+    }
+
+    @Test
+    void loginShouldFailWithInvalidPassword() {
+        LoginRequest request = new LoginRequest("johndoe", "WrongPassword1");
+        when(userRepository.findByUsername("johndoe")).thenReturn(Optional.of(savedUser()));
+        when(passwordEncoder.matches("WrongPassword1", HASHED_PASSWORD)).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.login(request))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("Invalid username or password");
+    }
+
+    @Test
+    void loginShouldFailWithUnknownUser() {
+        LoginRequest request = new LoginRequest("ghost", RAW_PASSWORD);
+        when(userRepository.findByUsername("ghost")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("ghost")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.login(request))
+                .isInstanceOf(BadCredentialsException.class);
+    }
+}
