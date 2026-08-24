@@ -29,6 +29,7 @@ import com.example.spring_boot_project_api.config.SecurityConfig;
 import com.example.spring_boot_project_api.dto.response.UserResponse;
 import com.example.spring_boot_project_api.exception.UserNotFoundException;
 import com.example.spring_boot_project_api.model.UserStatus;
+import com.example.spring_boot_project_api.service.UserHouseAccessService;
 import com.example.spring_boot_project_api.service.UserService;
 import com.example.spring_boot_project_api.util.JwtUtil;
 
@@ -48,6 +49,9 @@ class UserControllerTest {
 
     @MockitoBean
     private UserService userService;
+
+    @MockitoBean
+    private UserHouseAccessService userHouseAccessService;
 
     @MockitoBean
     private UserDetailsService userDetailsService;
