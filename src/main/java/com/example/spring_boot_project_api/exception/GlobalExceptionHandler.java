@@ -119,6 +119,36 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(MaintenanceRequestNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleMaintenanceRequestNotFound(
+            MaintenanceRequestNotFoundException ex, HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(MaintenanceAssignmentNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleMaintenanceAssignmentNotFound(
+            MaintenanceAssignmentNotFoundException ex, HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(MaintenanceCommentNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleMaintenanceCommentNotFound(
+            MaintenanceCommentNotFoundException ex, HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(MaintenanceCostNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleMaintenanceCostNotFound(
+            MaintenanceCostNotFoundException ex, HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvalidMaintenanceOperationException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidMaintenanceOperation(
+            InvalidMaintenanceOperationException ex, HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(DuplicateResourceException.class)
     public ResponseEntity<ErrorResponse> handleDuplicateResource(DuplicateResourceException ex,
             HttpServletRequest request) {
