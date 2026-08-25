@@ -1,9 +1,9 @@
 package com.example.spring_boot_project_api.service;
 
-import java.util.List;
-
 import com.example.spring_boot_project_api.dto.request.ContractTenantRequest;
 import com.example.spring_boot_project_api.dto.response.ContractTenantResponse;
+
+import java.util.List;
 
 public interface ContractTenantService {
     ContractTenantResponse addTenantToContract(ContractTenantRequest request);

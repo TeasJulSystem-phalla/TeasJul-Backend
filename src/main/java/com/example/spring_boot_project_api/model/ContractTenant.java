@@ -1,29 +1,15 @@
 package com.example.spring_boot_project_api.model;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-
+import jakarta.persistence.*;
+import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.ForeignKey;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "contract_tenants")
+@jakarta.persistence.Table(name = "contract_tenants")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -35,16 +21,16 @@ public class ContractTenant {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "contract_id", nullable = false, foreignKey = @ForeignKey(name = "fk_contract_tenants_contract"))
-    private RentalContract rentalContract;
+    @Column(name = "contract_id", nullable = false)
+    @JoinColumn(name = "contract_id",nullable = false,foreignKey = @ForeignKey(name ="fk_contract_id"))
+    private Long contractId;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "tenant_id", nullable = false, foreignKey = @ForeignKey(name = "fk_contract_tenants_tenant"))
-    private User tenant;
+    @Column(name = "tenant_id", nullable = false)
+    @JoinColumn(name = "tenant_id", nullable = false, foreignKey = @ForeignKey(name="fk_tenant"))
+    private Long tenantId;
 
-    @Column(name = "is_primary", nullable = false)
     @Builder.Default
+    @Column(name = "is_primary", nullable = false)
     private Boolean isPrimary = false;
 
     @Column(name = "joined_at", nullable = false)

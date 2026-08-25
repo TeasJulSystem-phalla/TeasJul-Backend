@@ -1,41 +1,55 @@
 package com.example.spring_boot_project_api.mapper;
 
-import java.time.LocalDate;
-
 import org.springframework.stereotype.Component;
 
+import com.example.spring_boot_project_api.dto.request.ContractTenantRequest;
 import com.example.spring_boot_project_api.dto.response.ContractTenantResponse;
 import com.example.spring_boot_project_api.model.ContractTenant;
-import com.example.spring_boot_project_api.model.RentalContract;
-import com.example.spring_boot_project_api.model.User;
 
 @Component
 public class ContractTenantMapper {
+    public ContractTenantResponse toResponse(ContractTenant entity) {
+        if (entity == null) {
+            return null;
+        }
 
-    public ContractTenant toEntity(RentalContract rentalContract, User tenant, Boolean isPrimary, LocalDate joinedAt) {
+        return new ContractTenantResponse(
+                entity.getId(),
+                entity.getContractId(),
+                entity.getTenantId(),
+                entity.getIsPrimary(),
+                entity.getJoinedAt(),
+                entity.getLeftAt(),
+                entity.getCreatedAt(),
+                entity.getUpdatedAt()
+        );
+    }
+
+    public ContractTenant toEntity(ContractTenantRequest request) {
+        if (request == null) {
+            return null;
+        }
+
         return ContractTenant.builder()
-                .rentalContract(rentalContract)
-                .tenant(tenant)
-                .isPrimary(isPrimary != null && isPrimary)
-                .joinedAt(joinedAt)
+                .contractId(request.contractId())
+                .tenantId(request.tenantId())
+                .isPrimary(request.isPrimary() != null ? request.isPrimary() : false)
+                .joinedAt(request.joinedAt())
+                .leftAt(request.leftAt())
                 .build();
     }
 
-    public ContractTenantResponse toResponse(ContractTenant contractTenant) {
-        RentalContract rentalContract = contractTenant.getRentalContract();
-        User tenant = contractTenant.getTenant();
+    public void updateEntityFromDto(ContractTenantRequest request, ContractTenant entity) {
+        if (request == null || entity == null) {
+            return;
+        }
 
-        return new ContractTenantResponse(
-                contractTenant.getId(),
-                rentalContract.getId(),
-                rentalContract.getContractNo(),
-                tenant.getId(),
-                tenant.getUsername(),
-                tenant.getFirstName() + " " + tenant.getLastName(),
-                contractTenant.getIsPrimary(),
-                contractTenant.getJoinedAt(),
-                contractTenant.getLeftAt(),
-                contractTenant.getCreatedAt(),
-                contractTenant.getUpdatedAt());
+        entity.setContractId(request.contractId());
+        entity.setTenantId(request.tenantId());
+        if (request.isPrimary() != null) {
+            entity.setIsPrimary(request.isPrimary());
+        }
+        entity.setJoinedAt(request.joinedAt());
+        entity.setLeftAt(request.leftAt());
     }
 }
