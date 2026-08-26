@@ -22,11 +22,9 @@ public class ContractTenant {
     private Long id;
 
     @Column(name = "contract_id", nullable = false)
-    @JoinColumn(name = "contract_id",nullable = false,foreignKey = @ForeignKey(name ="fk_contract_id"))
     private Long contractId;
 
     @Column(name = "tenant_id", nullable = false)
-    @JoinColumn(name = "tenant_id", nullable = false, foreignKey = @ForeignKey(name="fk_tenant"))
     private Long tenantId;
 
     @Builder.Default

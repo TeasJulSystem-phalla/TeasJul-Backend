@@ -1,5 +1,7 @@
 package com.example.spring_boot_project_api.controller;
 
+import java.util.List;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -16,11 +18,10 @@ import com.example.spring_boot_project_api.dto.response.ContractTenantResponse;
 import com.example.spring_boot_project_api.service.ContractTenantService;
 
 import jakarta.validation.Valid;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 
 @RestController
-@RequestMapping
+@RequestMapping("/api/v1/contract_tenant")
 @RequiredArgsConstructor
 public class ContractTenantController {
     private final ContractTenantService contractTenantService;

@@ -1,5 +1,10 @@
 package com.example.spring_boot_project_api.service.impl;
 
+import java.util.List;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.example.spring_boot_project_api.dto.request.ContractTenantRequest;
 import com.example.spring_boot_project_api.dto.response.ContractTenantResponse;
 import com.example.spring_boot_project_api.mapper.ContractTenantMapper;
@@ -8,9 +13,6 @@ import com.example.spring_boot_project_api.repository.ContractTenantRepository;
 import com.example.spring_boot_project_api.service.ContractTenantService;
 
 import jakarta.persistence.EntityNotFoundException;
-import java.util.List;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 
 @Service

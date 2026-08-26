@@ -5,16 +5,16 @@ import java.time.LocalDate;
 import jakarta.validation.constraints.NotNull;
 
 public record ContractTenantRequest(
-    @NotNull(message = "Contract ID is required")
-    Long contractId,
+        @NotNull(message = "Contract ID is required")
+        Long contractId,
 
-    @NotNull(message = "Tenant ID is required")
-    Long tenantId,
+        @NotNull(message = "Tenant ID is required")
+        Long tenantId,
 
-    Boolean isPrimary,
+        Boolean isPrimary,
 
-    @NotNull(message = "Joined date is required")
-    LocalDate joinedAt,
+        @NotNull(message = "Joined date is required")
+        LocalDate joinedAt,
 
-    LocalDate leftAt
-) {}
+        LocalDate leftAt) {
+}
