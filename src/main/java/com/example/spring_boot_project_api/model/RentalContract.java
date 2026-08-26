@@ -1,31 +1,27 @@
 package com.example.spring_boot_project_api.model;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
-
-import com.example.spring_boot_project_api.enums.RentalContractStatus;
-
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.ForeignKey;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+
+import com.example.spring_boot_project_api.enums.RentalContractStatus;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 
 @Entity
 @Table(name = "rental_contracts")
@@ -40,15 +36,14 @@ public class RentalContract {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "owner_id", nullable = false, foreignKey = @ForeignKey(name = "fk_contracts_owner"))
-    private User owner;
-
-    @Column(name = "room_id", nullable = false)
-    private Long roomId;
+    @Column(name = "owner_id", nullable = false)
+    private Long ownerId;
 
     @Column(name = "contract_no", nullable = false, length = 50)
     private String contractNo;
+
+    @Column(name = "room_id", nullable = false)
+    private Long roomId;
 
     @Column(name = "start_date", nullable = false)
     private LocalDate startDate;
@@ -59,19 +54,20 @@ public class RentalContract {
     @Column(name = "monthly_rent", nullable = false, precision = 12, scale = 2)
     private BigDecimal monthlyRent;
 
-    @Column(name = "security_deposit", nullable = false, precision = 12, scale = 2)
     @Builder.Default
+    @Column(name = "security_deposit", nullable = false, precision = 12, scale = 2)
     private BigDecimal securityDeposit = BigDecimal.ZERO;
 
+    @Builder.Default
     @Column(name = "due_day", nullable = false)
-    private Integer dueDay;
+    private Integer dueDay = 5;
 
     @Builder.Default
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
-    private RentalContractStatus status = RentalContractStatus.ACTIVE;
+    @Column(name = "status", nullable = false, length = 30)
+    private RentalContractStatus status = RentalContractStatus.DRAFT;
 
-    @Column(columnDefinition = "TEXT")
+    @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;
 
     @CreationTimestamp
