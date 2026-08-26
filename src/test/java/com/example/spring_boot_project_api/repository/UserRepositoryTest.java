@@ -2,6 +2,8 @@ package com.example.spring_boot_project_api.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.UUID;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -39,11 +41,12 @@ class UserRepositoryTest {
 
     @Test
     void findByUsernameShouldReturnUser() {
-        persistUser("johndoe", "john@example.com");
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        persistUser("johndoe_" + suffix, "john_" + suffix + "@example.com");
 
-        assertThat(userRepository.findByUsername("johndoe"))
+        assertThat(userRepository.findByUsername("johndoe_" + suffix))
                 .hasValueSatisfying(user -> {
-                    assertThat(user.getEmail()).isEqualTo("john@example.com");
+                    assertThat(user.getEmail()).isEqualTo("john_" + suffix + "@example.com");
                     assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
                     assertThat(user.getCreatedAt()).isNotNull();
                 });
@@ -51,10 +54,11 @@ class UserRepositoryTest {
 
     @Test
     void findByEmailShouldReturnUser() {
-        persistUser("janedoe", "jane@example.com");
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        persistUser("janedoe_" + suffix, "jane_" + suffix + "@example.com");
 
-        assertThat(userRepository.findByEmail("jane@example.com"))
-                .hasValueSatisfying(user -> assertThat(user.getUsername()).isEqualTo("janedoe"));
+        assertThat(userRepository.findByEmail("jane_" + suffix + "@example.com"))
+                .hasValueSatisfying(user -> assertThat(user.getUsername()).isEqualTo("janedoe_" + suffix));
     }
 
     @Test
@@ -64,10 +68,11 @@ class UserRepositoryTest {
 
     @Test
     void existsByUsernameAndEmailShouldReflectPersistedUsers() {
-        persistUser("unique_user", "unique@example.com");
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        persistUser("unique_user_" + suffix, "unique_" + suffix + "@example.com");
 
-        assertThat(userRepository.existsByUsername("unique_user")).isTrue();
-        assertThat(userRepository.existsByEmail("unique@example.com")).isTrue();
+        assertThat(userRepository.existsByUsername("unique_user_" + suffix)).isTrue();
+        assertThat(userRepository.existsByEmail("unique_" + suffix + "@example.com")).isTrue();
         assertThat(userRepository.existsByUsername("missing")).isFalse();
         assertThat(userRepository.existsByEmail("missing@example.com")).isFalse();
     }
