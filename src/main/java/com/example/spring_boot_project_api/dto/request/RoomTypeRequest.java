@@ -14,9 +14,6 @@ import lombok.Data;
 @Data
 public class RoomTypeRequest {
     
-    @NotNull(message="Owner ID cannot be null")
-    private Long ownerId;
-
     @NotBlank(message = "Name is required")
     @Size(max = 100, message = "Name must be over 100 characters")
     private String name;

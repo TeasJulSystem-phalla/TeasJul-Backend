@@ -3,13 +3,9 @@ package com.example.spring_boot_project_api.dto.request;
 import com.example.spring_boot_project_api.enums.AmenityStatus;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 public record AmenityRequest (
-
-    @NotNull(message = "Owner ID is required")
-    Long ownerId,
 
     @NotBlank(message = "Name is required")
     @Size(max = 100, message = "Name must not exceed 100 characters")

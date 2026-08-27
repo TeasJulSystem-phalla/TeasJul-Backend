@@ -24,7 +24,6 @@ public class AmenityMapper {
 
     public Amenity toEntity(AmenityRequest request) {
         return Amenity.builder()
-                .ownerId(request.ownerId())
                 .name(request.name())
                 .code(request.code())
                 .description(request.description())

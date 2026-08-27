@@ -15,9 +15,6 @@ import lombok.Data;
 
 @Data
 public class RentalContractRequest {
-    @NotNull(message = "Owner ID is required")
-    private Long ownerId;
-
     @NotBlank(message = "Contract number is required")
     @Size(max = 50, message = "Contract number must not exceed 50 characters")
     private String contractNo;

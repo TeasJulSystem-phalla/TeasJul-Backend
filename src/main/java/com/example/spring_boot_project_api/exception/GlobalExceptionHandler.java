@@ -149,10 +149,64 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(UtilityTypeNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleUtilityTypeNotFound(
+            UtilityTypeNotFoundException ex, HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(UtilityMeterNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleUtilityMeterNotFound(
+            UtilityMeterNotFoundException ex, HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(UtilityReadingNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleUtilityReadingNotFound(
+            UtilityReadingNotFoundException ex, HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(UtilityRateNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleUtilityRateNotFound(
+            UtilityRateNotFoundException ex, HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvalidUtilityOperationException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidUtilityOperation(
+            InvalidUtilityOperationException ex, HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(DuplicateResourceException.class)
     public ResponseEntity<ErrorResponse> handleDuplicateResource(DuplicateResourceException ex,
             HttpServletRequest request) {
         return build(HttpStatus.CONFLICT, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(RentalContractNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleRentalContractNotFound(
+            RentalContractNotFoundException ex, HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(ContractTenantNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleContractTenantNotFound(
+            ContractTenantNotFoundException ex, HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(ContractDepositNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleContractDepositNotFound(
+            ContractDepositNotFoundException ex, HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(ContractRenewalNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleContractRenewalNotFound(
+            ContractRenewalNotFoundException ex, HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
     @ExceptionHandler(NoResourceFoundException.class)

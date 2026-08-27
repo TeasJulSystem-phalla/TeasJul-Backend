@@ -16,6 +16,10 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
 
     List<RentalContract> findByOwnerId(Long ownerId);
 
+    List<RentalContract> findByOwnerIdAndRoomId(Long ownerId, Long roomId);
+
+    List<RentalContract> findByOwnerIdAndStatus(Long ownerId, RentalContractStatus status);
+
     List<RentalContract> findByRoomId(Long roomId);
 
     List<RentalContract> findByStatus(RentalContractStatus status);

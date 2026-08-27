@@ -16,7 +16,6 @@ public class RoomMapper {
         if (dto == null) return null;
 
         Room room = new Room();
-        room.setOwnerId(dto.getOwnerId());
         room.setHouseId(dto.getHouseId());
         room.setRoomTypeId(dto.getRoomTypeId());
         room.setRoomNumber(dto.getRoomNumber());

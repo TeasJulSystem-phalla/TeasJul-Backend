@@ -2,6 +2,7 @@ package com.example.spring_boot_project_api.service.impl;
 
 import java.util.List;
 
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,6 +14,7 @@ import com.example.spring_boot_project_api.mapper.RoomTypeMapper;
 import com.example.spring_boot_project_api.model.RoomType;
 import com.example.spring_boot_project_api.repository.RoomTypeRepository;
 import com.example.spring_boot_project_api.service.RoomTypeService;
+import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
 
@@ -22,27 +24,30 @@ public class RoomTypeServiceImpl implements RoomTypeService {
 
     private final RoomTypeRepository roomTypeRepository;
     private final RoomTypeMapper roomTypeMapper;
+    private final SecurityUtils securityUtils;
 
     @Override
     @Transactional
     public RoomTypeResponse createRoomType(RoomTypeRequest request) {
+        Long currentUserId = securityUtils.getCurrentUserId();
         if (roomTypeRepository.existsByCode(request.getCode())) {
             throw new DuplicateResourceException("Room type code already exists: " + request.getCode());
         }
         RoomType roomType = roomTypeMapper.toEntity(request);
+        roomType.setOwnerId(currentUserId);
         return roomTypeMapper.toDto(roomTypeRepository.save(roomType));
     }
 
     @Override
     @Transactional(readOnly = true)
     public RoomTypeResponse getRoomTypeById(Long id) {
-        return roomTypeMapper.toDto(getExistingRoomType(id));
+        return roomTypeMapper.toDto(getOwnedRoomType(id));
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<RoomTypeResponse> getAllRoomTypes() {
-        return roomTypeRepository.findAll().stream()
+        return roomTypeRepository.findByOwnerId(securityUtils.getCurrentUserId()).stream()
                 .map(roomTypeMapper::toDto)
                 .toList();
     }
@@ -50,7 +55,7 @@ public class RoomTypeServiceImpl implements RoomTypeService {
     @Override
     @Transactional(readOnly = true)
     public List<RoomTypeResponse> getRoomTypesByOwner(Long ownerId) {
-        return roomTypeRepository.findByOwnerId(ownerId).stream()
+        return roomTypeRepository.findByOwnerId(securityUtils.getCurrentUserId()).stream()
                 .map(roomTypeMapper::toDto)
                 .toList();
     }
@@ -58,42 +63,38 @@ public class RoomTypeServiceImpl implements RoomTypeService {
     @Override
     @Transactional
     public RoomTypeResponse updateRoomType(Long id, RoomTypeRequest request) {
-        RoomType existing = getExistingRoomType(id);
-
+        RoomType existing = getOwnedRoomType(id);
         if (!existing.getCode().equals(request.getCode())
                 && roomTypeRepository.existsByCode(request.getCode())) {
             throw new DuplicateResourceException("Room type code already exists: " + request.getCode());
         }
-
-        existing.setOwnerId(request.getOwnerId());
         existing.setName(request.getName());
         existing.setCode(request.getCode());
         existing.setDescription(request.getDescription());
-        if (request.getCapacity() != null) {
-            existing.setCapacity(request.getCapacity());
-        }
-        if (request.getDefaultRent() != null) {
-            existing.setDefaultRent(request.getDefaultRent());
-        }
-        if (request.getDefaultDeposit() != null) {
-            existing.setDefaultDeposit(request.getDefaultDeposit());
-        }
-        if (request.getStatus() != null) {
-            existing.setStatus(request.getStatus());
-        }
-
+        if (request.getCapacity() != null) existing.setCapacity(request.getCapacity());
+        if (request.getDefaultRent() != null) existing.setDefaultRent(request.getDefaultRent());
+        if (request.getDefaultDeposit() != null) existing.setDefaultDeposit(request.getDefaultDeposit());
+        if (request.getStatus() != null) existing.setStatus(request.getStatus());
         return roomTypeMapper.toDto(roomTypeRepository.save(existing));
     }
 
     @Override
     @Transactional
     public void deleteRoomType(Long id) {
-        RoomType existing = getExistingRoomType(id);
+        RoomType existing = getOwnedRoomType(id);
         roomTypeRepository.delete(existing);
     }
 
-    private RoomType getExistingRoomType(Long id) {
+    private RoomType getOwnedRoomType(Long id) {
+        Long currentUserId = securityUtils.getCurrentUserId();
         return roomTypeRepository.findById(id)
+                .map(roomType -> {
+                    if (!roomType.getOwnerId().equals(currentUserId)) {
+                        throw new AccessDeniedException(
+                                "You do not have permission to access this resource");
+                    }
+                    return roomType;
+                })
                 .orElseThrow(() -> RoomTypeNotFoundException.forId(id));
     }
 }

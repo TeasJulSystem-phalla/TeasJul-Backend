@@ -13,9 +13,6 @@ import lombok.Data;
 
 @Data
 public class RoomRepuest {
-    @NotNull(message = "Owner ID is required")
-    private Long ownerId;
-
     @NotNull(message = "House ID is required")
     private Long houseId;
 

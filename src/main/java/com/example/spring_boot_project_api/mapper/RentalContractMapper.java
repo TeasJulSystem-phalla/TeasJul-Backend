@@ -29,7 +29,6 @@ public class RentalContractMapper {
     }
     public RentalContract toEntity(RentalContractRequest request) {
         return RentalContract.builder()
-                .ownerId(request.getOwnerId())
                 .contractNo(request.getContractNo())
                 .roomId(request.getRoomId())
                 .startDate(request.getStartDate())
@@ -45,7 +44,6 @@ public class RentalContractMapper {
         if (request == null || contract == null) {
             return;
         }
-        contract.setOwnerId(request.getOwnerId());
         contract.setContractNo(request.getContractNo());
         contract.setRoomId(request.getRoomId());
         contract.setStartDate(request.getStartDate());
