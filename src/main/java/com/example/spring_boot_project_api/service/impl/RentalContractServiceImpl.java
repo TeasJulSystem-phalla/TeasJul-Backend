@@ -3,6 +3,7 @@ package com.example.spring_boot_project_api.service.impl;
 import com.example.spring_boot_project_api.dto.request.RentalContractRequest;
 import com.example.spring_boot_project_api.dto.response.RentalContractResponse;
 import com.example.spring_boot_project_api.enums.RentalContractStatus;
+import com.example.spring_boot_project_api.enums.RoomStatus;
 import com.example.spring_boot_project_api.exception.DuplicateResourceException;
 import com.example.spring_boot_project_api.exception.RentalContractNotFoundException;
 import com.example.spring_boot_project_api.exception.RoomNotFoundException;
@@ -35,6 +36,12 @@ public class RentalContractServiceImpl implements RentalContractService {
         Long currentUserId = securityUtils.getCurrentUserId();
         verifyRoomOwnership(request.getRoomId(), currentUserId);
 
+        Room targetRoom = roomRepository.findById(request.getRoomId())
+                .orElseThrow(() -> RoomNotFoundException.forId(request.getRoomId()));
+        if (targetRoom.getStatus() == RoomStatus.OCCUPIED || contractRepository.existsByRoomIdAndStatus(request.getRoomId(), RentalContractStatus.ACTIVE)) {
+            throw new DuplicateResourceException("Room " + targetRoom.getRoomNumber() + " is already occupied and cannot be assigned to a new contract.");
+        }
+
         contractRepository.findByOwnerIdAndContractNo(currentUserId, request.getContractNo())
                 .ifPresent(c -> {
                     throw new DuplicateResourceException(
@@ -44,6 +51,7 @@ public class RentalContractServiceImpl implements RentalContractService {
         RentalContract contract = contractMapper.toEntity(request);
         contract.setOwnerId(currentUserId);
         RentalContract savedContract = contractRepository.save(contract);
+        syncRoomStatus(savedContract.getRoomId());
         return contractMapper.toResponse(savedContract);
     }
 
@@ -88,6 +96,14 @@ public class RentalContractServiceImpl implements RentalContractService {
         Long currentUserId = securityUtils.getCurrentUserId();
         verifyRoomOwnership(request.getRoomId(), currentUserId);
 
+        if (!existingContract.getRoomId().equals(request.getRoomId())) {
+            Room newRoom = roomRepository.findById(request.getRoomId())
+                    .orElseThrow(() -> RoomNotFoundException.forId(request.getRoomId()));
+            if (newRoom.getStatus() == RoomStatus.OCCUPIED || contractRepository.existsByRoomIdAndStatus(request.getRoomId(), RentalContractStatus.ACTIVE)) {
+                throw new DuplicateResourceException("Room " + newRoom.getRoomNumber() + " is already occupied and cannot be assigned to this contract.");
+            }
+        }
+
         contractRepository.findByOwnerIdAndContractNo(currentUserId, request.getContractNo())
                 .filter(c -> !c.getId().equals(id))
                 .ifPresent(c -> {
@@ -95,8 +111,13 @@ public class RentalContractServiceImpl implements RentalContractService {
                             "Contract number already exists for this owner: " + request.getContractNo());
                 });
 
+        Long prevRoomId = existingContract.getRoomId();
         contractMapper.updateEntityFromDto(request, existingContract);
         RentalContract updatedContract = contractRepository.save(existingContract);
+        syncRoomStatus(prevRoomId);
+        if (!prevRoomId.equals(updatedContract.getRoomId())) {
+            syncRoomStatus(updatedContract.getRoomId());
+        }
         return contractMapper.toResponse(updatedContract);
     }
 
@@ -104,13 +125,31 @@ public class RentalContractServiceImpl implements RentalContractService {
     public RentalContractResponse updateStatus(Long id, RentalContractStatus status) {
         RentalContract contract = getOwnedContract(id);
         contract.setStatus(status);
-        return contractMapper.toResponse(contractRepository.save(contract));
+        RentalContract saved = contractRepository.save(contract);
+        syncRoomStatus(contract.getRoomId());
+        return contractMapper.toResponse(saved);
     }
 
     @Override
     public void deleteContract(Long id) {
         RentalContract contract = getOwnedContract(id);
+        Long roomId = contract.getRoomId();
         contractRepository.delete(contract);
+        syncRoomStatus(roomId);
+    }
+
+    private void syncRoomStatus(Long roomId) {
+        if (roomId == null) return;
+        roomRepository.findById(roomId).ifPresent(room -> {
+            boolean hasActiveContract = contractRepository.existsByRoomIdAndStatus(roomId, RentalContractStatus.ACTIVE);
+            if (hasActiveContract && room.getStatus() == RoomStatus.AVAILABLE) {
+                room.setStatus(RoomStatus.OCCUPIED);
+                roomRepository.save(room);
+            } else if (!hasActiveContract && room.getStatus() == RoomStatus.OCCUPIED) {
+                room.setStatus(RoomStatus.AVAILABLE);
+                roomRepository.save(room);
+            }
+        });
     }
 
     private RentalContract getOwnedContract(Long id) {

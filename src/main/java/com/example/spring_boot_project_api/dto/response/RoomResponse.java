@@ -24,5 +24,5 @@ public class RoomResponse {
     private String description;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
-    
+    private RoomTenantResponse tenant;
 }

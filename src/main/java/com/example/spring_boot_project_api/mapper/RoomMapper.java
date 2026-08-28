@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 
 import com.example.spring_boot_project_api.dto.request.RoomRepuest;
 import com.example.spring_boot_project_api.dto.response.RoomResponse;
+import com.example.spring_boot_project_api.dto.response.RoomTenantResponse;
 import com.example.spring_boot_project_api.enums.RoomStatus;
 import com.example.spring_boot_project_api.model.Room;
 
@@ -30,6 +31,10 @@ public class RoomMapper {
     }
 
     public RoomResponse toDto(Room entity) {
+        return toDto(entity, null);
+    }
+
+    public RoomResponse toDto(Room entity, RoomTenantResponse tenant) {
         if (entity == null) return null;
 
         RoomResponse response = new RoomResponse();
@@ -47,6 +52,7 @@ public class RoomMapper {
         response.setDescription(entity.getDescription());
         response.setCreatedAt(entity.getCreatedAt());
         response.setUpdatedAt(entity.getUpdatedAt());
+        response.setTenant(tenant);
         return response;
     }
 }

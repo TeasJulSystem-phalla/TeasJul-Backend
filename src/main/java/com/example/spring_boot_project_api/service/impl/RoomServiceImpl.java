@@ -1,13 +1,19 @@
 package com.example.spring_boot_project_api.service.impl;
 
+import java.time.LocalDate;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.example.spring_boot_project_api.dto.request.RoomRepuest;
+import com.example.spring_boot_project_api.dto.response.ActiveRoomTenantDto;
 import com.example.spring_boot_project_api.dto.response.RoomResponse;
+import com.example.spring_boot_project_api.dto.response.RoomTenantResponse;
 import com.example.spring_boot_project_api.exception.DuplicateResourceException;
 import com.example.spring_boot_project_api.exception.HouseNotFoundException;
 import com.example.spring_boot_project_api.exception.RoomNotFoundException;
@@ -15,6 +21,7 @@ import com.example.spring_boot_project_api.mapper.RoomMapper;
 import com.example.spring_boot_project_api.model.House;
 import com.example.spring_boot_project_api.model.Room;
 import com.example.spring_boot_project_api.repository.HouseRepository;
+import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.service.RoomService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
@@ -27,6 +34,7 @@ public class RoomServiceImpl implements RoomService {
 
     private final RoomRepository roomRepository;
     private final HouseRepository houseRepository;
+    private final RentalContractRepository rentalContractRepository;
     private final RoomMapper roomMapper;
     private final SecurityUtils securityUtils;
 
@@ -42,20 +50,26 @@ public class RoomServiceImpl implements RoomService {
         }
         Room room = roomMapper.toEntity(request);
         room.setOwnerId(currentUserId);
-        return roomMapper.toDto(roomRepository.save(room));
+        return roomMapper.toDto(roomRepository.save(room), null);
     }
 
     @Override
     @Transactional(readOnly = true)
     public RoomResponse getRoomById(Long id) {
-        return roomMapper.toDto(getOwnedRoom(id));
+        Long currentUserId = securityUtils.getCurrentUserId();
+        Room room = getOwnedRoom(id);
+        RoomTenantResponse tenant = getActiveTenantForRoom(room.getId(), currentUserId);
+        return roomMapper.toDto(room, tenant);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<RoomResponse> getAllRooms() {
-        return roomRepository.findByOwnerId(securityUtils.getCurrentUserId()).stream()
-                .map(roomMapper::toDto)
+        Long currentUserId = securityUtils.getCurrentUserId();
+        List<Room> rooms = roomRepository.findByOwnerId(currentUserId);
+        Map<Long, RoomTenantResponse> tenantMap = getActiveTenantsForRooms(rooms, currentUserId);
+        return rooms.stream()
+                .map(room -> roomMapper.toDto(room, tenantMap.get(room.getId())))
                 .toList();
     }
 
@@ -64,8 +78,10 @@ public class RoomServiceImpl implements RoomService {
     public List<RoomResponse> getRoomsByHouse(Long houseId) {
         Long currentUserId = securityUtils.getCurrentUserId();
         verifyHouseOwnership(houseId, currentUserId);
-        return roomRepository.findByHouseId(houseId).stream()
-                .map(roomMapper::toDto)
+        List<Room> rooms = roomRepository.findByHouseId(houseId);
+        Map<Long, RoomTenantResponse> tenantMap = getActiveTenantsForRooms(rooms, currentUserId);
+        return rooms.stream()
+                .map(room -> roomMapper.toDto(room, tenantMap.get(room.getId())))
                 .toList();
     }
 
@@ -101,7 +117,9 @@ public class RoomServiceImpl implements RoomService {
         }
         existing.setDescription(request.getDescription());
 
-        return roomMapper.toDto(roomRepository.save(existing));
+        Room saved = roomRepository.save(existing);
+        RoomTenantResponse tenant = getActiveTenantForRoom(saved.getId(), currentUserId);
+        return roomMapper.toDto(saved, tenant);
     }
 
     @Override
@@ -109,6 +127,32 @@ public class RoomServiceImpl implements RoomService {
     public void deleteRoom(Long id) {
         Room existing = getOwnedRoom(id);
         roomRepository.delete(existing);
+    }
+
+    private Map<Long, RoomTenantResponse> getActiveTenantsForRooms(List<Room> rooms, Long ownerId) {
+        if (rooms == null || rooms.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Long> roomIds = rooms.stream().map(Room::getId).toList();
+        List<ActiveRoomTenantDto> activeTenants = rentalContractRepository.findActiveTenantsByRoomIds(
+                roomIds, ownerId, LocalDate.now()
+        );
+        Map<Long, RoomTenantResponse> map = new HashMap<>();
+        for (ActiveRoomTenantDto item : activeTenants) {
+            map.putIfAbsent(item.roomId(), new RoomTenantResponse(item.tenantId(), item.firstName(), item.lastName()));
+        }
+        return map;
+    }
+
+    private RoomTenantResponse getActiveTenantForRoom(Long roomId, Long ownerId) {
+        List<ActiveRoomTenantDto> list = rentalContractRepository.findActiveTenantsByRoomIds(
+                List.of(roomId), ownerId, LocalDate.now()
+        );
+        if (list.isEmpty()) {
+            return null;
+        }
+        ActiveRoomTenantDto item = list.get(0);
+        return new RoomTenantResponse(item.tenantId(), item.firstName(), item.lastName());
     }
 
     private Room getOwnedRoom(Long id) {

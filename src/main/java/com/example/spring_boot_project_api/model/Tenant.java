@@ -89,7 +89,7 @@ public class Tenant {
 
     @Builder.Default
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, columnDefinition = "ENUM('ACTIVE','INACTIVE') DEFAULT 'ACTIVE'")
+    @Column(name = "status", nullable = false, columnDefinition = "VARCHAR(20) DEFAULT 'ACTIVE'")
     private TenantStatus status = TenantStatus.ACTIVE;
 
     @CreationTimestamp
