@@ -143,6 +143,18 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(ExpenseCategoryNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleExpenseCategoryNotFound(
+            ExpenseCategoryNotFoundException ex, HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(ExpenseNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleExpenseNotFound(
+            ExpenseNotFoundException ex, HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(InvalidMaintenanceOperationException.class)
     public ResponseEntity<ErrorResponse> handleInvalidMaintenanceOperation(
             InvalidMaintenanceOperationException ex, HttpServletRequest request) {
