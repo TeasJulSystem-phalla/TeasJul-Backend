@@ -1,5 +1,6 @@
 package com.example.spring_boot_project_api.service.impl;
 
+import java.util.Collections;
 import java.util.List;
 
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -18,8 +19,10 @@ import com.example.spring_boot_project_api.model.MaintenanceCategory;
 import com.example.spring_boot_project_api.model.MaintenanceCategoryStatus;
 import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.repository.MaintenanceCategoryRepository;
+import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.MaintenanceCategoryService;
+import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
 
@@ -29,7 +32,9 @@ public class MaintenanceCategoryServiceImpl implements MaintenanceCategoryServic
 
     private final MaintenanceCategoryRepository categoryRepository;
     private final UserRepository userRepository;
+    private final UserHouseAccessRepository userHouseAccessRepository;
     private final MaintenanceCategoryMapper categoryMapper;
+    private final SecurityUtils securityUtils;
 
     @Override
     @Transactional
@@ -47,8 +52,11 @@ public class MaintenanceCategoryServiceImpl implements MaintenanceCategoryServic
     @Override
     @Transactional(readOnly = true)
     public List<MaintenanceCategoryResponse> getMyCategories() {
-        User owner = getCurrentOwner();
-        return categoryRepository.findAllByOwnerIdOrderByCreatedAtDesc(owner.getId()).stream()
+        List<Long> ownerIds = resolveScopedOwnerIds();
+        if (ownerIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return categoryRepository.findAllByOwnerIdInOrderByCreatedAtDesc(ownerIds).stream()
                 .map(categoryMapper::toResponse)
                 .toList();
     }
@@ -113,6 +121,13 @@ public class MaintenanceCategoryServiceImpl implements MaintenanceCategoryServic
             throw new DuplicateResourceException(
                     "Maintenance category code already exists for this owner: " + code);
         }
+    }
+
+    private List<Long> resolveScopedOwnerIds() {
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+            return userHouseAccessRepository.findOwnerIdsByUserId(securityUtils.getCurrentUserId());
+        }
+        return List.of(getCurrentOwner().getId());
     }
 
     private User getCurrentOwner() {

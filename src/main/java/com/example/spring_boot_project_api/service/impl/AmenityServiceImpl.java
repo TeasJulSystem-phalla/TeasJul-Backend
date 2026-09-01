@@ -1,5 +1,6 @@
 package com.example.spring_boot_project_api.service.impl;
 
+import java.util.Collections;
 import java.util.List;
 
 import org.springframework.security.access.AccessDeniedException;
@@ -19,8 +20,10 @@ import com.example.spring_boot_project_api.mapper.AmenityMapper;
 import com.example.spring_boot_project_api.model.Amenity;
 import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.repository.AmenityRepository;
+import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.AmenityService;
+import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
 
@@ -30,7 +33,9 @@ public class AmenityServiceImpl implements AmenityService {
 
     private final AmenityRepository amenityRepository;
     private final UserRepository userRepository;
+    private final UserHouseAccessRepository userHouseAccessRepository;
     private final AmenityMapper amenityMapper;
+    private final SecurityUtils securityUtils;
 
     @Override
     @Transactional
@@ -54,8 +59,8 @@ public class AmenityServiceImpl implements AmenityService {
     @Override
     @Transactional(readOnly = true)
     public List<AmenityResponse> getMyAmenities() {
-        Long ownerId = getCurrentUser().getId();
-        return amenityRepository.findByOwnerIdOrderByCreatedAtDesc(ownerId).stream()
+        List<Long> ownerIds = resolveScopedOwnerIds();
+        return amenityRepository.findByOwnerIdInOrderByCreatedAtDesc(ownerIds).stream()
                 .map(amenityMapper::toResponse)
                 .toList();
     }
@@ -63,8 +68,8 @@ public class AmenityServiceImpl implements AmenityService {
     @Override
     @Transactional(readOnly = true)
     public List<AmenityResponse> getMyAmenitiesByStatus(AmenityStatus status) {
-        Long ownerId = getCurrentUser().getId();
-        return amenityRepository.findByOwnerIdAndStatus(ownerId, status).stream()
+        List<Long> ownerIds = resolveScopedOwnerIds();
+        return amenityRepository.findByOwnerIdInAndStatus(ownerIds, status).stream()
                 .map(amenityMapper::toResponse)
                 .toList();
     }
@@ -101,6 +106,17 @@ public class AmenityServiceImpl implements AmenityService {
     public void deleteAmenity(Long id) {
         Amenity amenity = getOwnedAmenity(id);
         amenityRepository.delete(amenity);
+    }
+
+    private List<Long> resolveScopedOwnerIds() {
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+            List<Long> ownerIds = userHouseAccessRepository.findOwnerIdsByUserId(securityUtils.getCurrentUserId());
+            if (ownerIds.isEmpty()) {
+                return Collections.emptyList();
+            }
+            return ownerIds;
+        }
+        return List.of(getCurrentUser().getId());
     }
 
     private Amenity getOwnedAmenity(Long id) {

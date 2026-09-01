@@ -8,6 +8,8 @@ public interface UserRoleService {
 
     List<RoleResponse> getUserRoles(Long userId);
 
+    List<RoleResponse> getCurrentUserRoles();
+
     RoleResponse assignRoleToUser(Long userId, Long roleId);
 
     void removeRoleFromUser(Long userId, Long roleId);

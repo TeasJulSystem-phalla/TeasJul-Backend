@@ -1,25 +1,42 @@
 package com.example.spring_boot_project_api.service.impl;
 
+import java.time.LocalDate;
 import java.util.List;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.example.spring_boot_project_api.dto.request.CreateHouseRequest;
 import com.example.spring_boot_project_api.dto.request.UpdateHouseRequest;
 import com.example.spring_boot_project_api.dto.response.HouseResponse;
+import com.example.spring_boot_project_api.dto.response.HouseSummaryResponse;
+import com.example.spring_boot_project_api.dto.response.PageResponse;
+import com.example.spring_boot_project_api.dto.response.RentalContractResponse;
+import com.example.spring_boot_project_api.dto.response.RoomResponse;
+import com.example.spring_boot_project_api.dto.response.TenantResponse;
+import com.example.spring_boot_project_api.enums.RentalContractStatus;
+import com.example.spring_boot_project_api.enums.RoomStatus;
 import com.example.spring_boot_project_api.exception.DuplicateResourceException;
 import com.example.spring_boot_project_api.exception.HouseNotFoundException;
-import com.example.spring_boot_project_api.exception.UserNotFoundException;
 import com.example.spring_boot_project_api.mapper.HouseMapper;
+import com.example.spring_boot_project_api.mapper.RentalContractMapper;
+import com.example.spring_boot_project_api.mapper.RoomMapper;
+import com.example.spring_boot_project_api.mapper.TenantMapper;
 import com.example.spring_boot_project_api.model.House;
-import com.example.spring_boot_project_api.model.User;
+import com.example.spring_boot_project_api.model.RentalContract;
+import com.example.spring_boot_project_api.model.Room;
+import com.example.spring_boot_project_api.model.Tenant;
+import com.example.spring_boot_project_api.repository.ContractTenantRepository;
 import com.example.spring_boot_project_api.repository.HouseRepository;
-import com.example.spring_boot_project_api.repository.UserRepository;
+import com.example.spring_boot_project_api.repository.RentalContractRepository;
+import com.example.spring_boot_project_api.repository.RoomRepository;
+import com.example.spring_boot_project_api.repository.TenantRepository;
+import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.service.HouseService;
+import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
 
@@ -28,18 +45,28 @@ import lombok.RequiredArgsConstructor;
 public class HouseServiceImpl implements HouseService {
 
     private final HouseRepository houseRepository;
-    private final UserRepository userRepository;
+    private final RoomRepository roomRepository;
+    private final RentalContractRepository rentalContractRepository;
+    private final ContractTenantRepository contractTenantRepository;
+    private final TenantRepository tenantRepository;
+    private final UserHouseAccessRepository userHouseAccessRepository;
     private final HouseMapper houseMapper;
+    private final RoomMapper roomMapper;
+    private final TenantMapper tenantMapper;
+    private final RentalContractMapper rentalContractMapper;
+    private final SecurityUtils securityUtils;
 
     @Override
     @Transactional
     public HouseResponse createHouse(CreateHouseRequest request) {
-        User owner = getCurrentOwner();
+        requireOwner();
 
-        validateUniqueFields(owner.getId(), request.name(), request.slug(), request.code(), null);
+        Long ownerId = securityUtils.getCurrentUserId();
+
+        validateUniqueFields(ownerId, request.name(), request.slug(), request.code(), null);
 
         House house = houseMapper.toEntity(request);
-        house.setOwner(owner);
+        house.setOwner(securityUtils.getCurrentUser());
 
         return houseMapper.toResponse(houseRepository.save(house));
     }
@@ -47,21 +74,35 @@ public class HouseServiceImpl implements HouseService {
     @Override
     @Transactional(readOnly = true)
     public HouseResponse getHouseById(Long id) {
-        return houseMapper.toResponse(getOwnedHouse(id));
+        return houseMapper.toResponse(requireOwnerOrManager(id));
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<HouseResponse> getMyHouses() {
-        User owner = getCurrentOwner();
-        return houseRepository.findAllByOwnerIdOrderByCreatedAtDesc(owner.getId()).stream()
-                .map(houseMapper::toResponse)
-                .toList();
+        Long userId = securityUtils.getCurrentUserId();
+
+        // OWNER always sees all houses within its ownership scope.
+        if (securityUtils.hasRole(SecurityUtils.ROLE_OWNER)) {
+            return houseRepository.findAllByOwnerIdOrderByCreatedAtDesc(userId).stream()
+                    .map(houseMapper::toResponse)
+                    .toList();
+        }
+
+        // MANAGER sees only the houses assigned through user_house_access.
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+            return userHouseAccessRepository.findHousesByUserId(userId).stream()
+                    .map(houseMapper::toResponse)
+                    .toList();
+        }
+
+        return List.of();
     }
 
     @Override
     @Transactional
     public HouseResponse updateHouse(Long id, UpdateHouseRequest request) {
+        requireOwner();
         House house = getOwnedHouse(id);
         Long ownerId = house.getOwner().getId();
 
@@ -107,12 +148,133 @@ public class HouseServiceImpl implements HouseService {
     @Override
     @Transactional
     public void deleteHouse(Long id) {
+        requireOwner();
         House house = getOwnedHouse(id);
         houseRepository.delete(house);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public HouseSummaryResponse getHouseSummary(Long houseId) {
+        Long ownerOfHouse = requireOwnerOrManager(houseId).getOwner().getId();
+        boolean isOwner = ownerOfHouse.equals(securityUtils.getCurrentUserId());
+
+        long totalRooms = roomRepository.countByHouseId(houseId);
+        long availableRooms = roomRepository.countByHouseIdAndStatus(houseId, RoomStatus.AVAILABLE);
+        long occupiedRooms = roomRepository.countByHouseIdAndStatus(houseId, RoomStatus.OCCUPIED);
+        long maintenanceRooms = roomRepository.countByHouseIdAndStatus(houseId, RoomStatus.MAINTENANCE);
+
+        long activeTenants;
+        long activeContracts;
+        if (isOwner) {
+            Long ownerId = securityUtils.getCurrentUserId();
+            activeTenants = contractTenantRepository.countActiveTenantsByHouseIdAndOwnerId(
+                    houseId, ownerId, LocalDate.now());
+            activeContracts = rentalContractRepository.countByHouseIdAndOwnerIdAndStatus(
+                    houseId, ownerId, RentalContractStatus.ACTIVE);
+        } else {
+            activeTenants = contractTenantRepository.countActiveTenantsByHouseId(houseId, LocalDate.now());
+            activeContracts = rentalContractRepository.countByHouseIdAndStatus(houseId, RentalContractStatus.ACTIVE);
+        }
+
+        return new HouseSummaryResponse(
+                totalRooms,
+                availableRooms,
+                occupiedRooms,
+                maintenanceRooms,
+                activeTenants,
+                activeContracts);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<RoomResponse> getHouseRooms(Long houseId, String search, RoomStatus status,
+            Long roomTypeId, Pageable pageable) {
+        boolean isOwner = requireOwnerOrManager(houseId).getOwner().getId()
+                .equals(securityUtils.getCurrentUserId());
+
+        Page<Room> page;
+        if (isOwner) {
+            Long ownerId = securityUtils.getCurrentUserId();
+            page = roomRepository.findByHouseIdWithFilters(
+                    houseId, ownerId, search, status, roomTypeId, pageable);
+        } else {
+            page = roomRepository.findByHouseIdWithFilters(houseId, search, status, roomTypeId, pageable);
+        }
+
+        List<RoomResponse> content = page.getContent().stream()
+                .map(room -> roomMapper.toDto(room, null))
+                .toList();
+
+        return toPageResponse(content, page);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<TenantResponse> getHouseTenants(Long houseId, String search, Pageable pageable) {
+        boolean isOwner = requireOwnerOrManager(houseId).getOwner().getId()
+                .equals(securityUtils.getCurrentUserId());
+
+        Page<Tenant> page;
+        if (isOwner) {
+            Long ownerId = securityUtils.getCurrentUserId();
+            page = tenantRepository.findActiveTenantsByHouseId(
+                    houseId, ownerId, RentalContractStatus.ACTIVE, LocalDate.now(), search, pageable);
+        } else {
+            page = tenantRepository.findActiveTenantsByHouseId(
+                    houseId, RentalContractStatus.ACTIVE, LocalDate.now(), search, pageable);
+        }
+
+        List<TenantResponse> content = page.getContent().stream()
+                .map(tenantMapper::toResponse)
+                .toList();
+
+        return toPageResponse(content, page);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<RentalContractResponse> getHouseContracts(Long houseId, String search,
+            RentalContractStatus status, Pageable pageable) {
+        boolean isOwner = requireOwnerOrManager(houseId).getOwner().getId()
+                .equals(securityUtils.getCurrentUserId());
+
+        Page<RentalContract> page;
+        if (isOwner) {
+            Long ownerId = securityUtils.getCurrentUserId();
+            page = rentalContractRepository.findByHouseIdWithFilters(
+                    houseId, ownerId, search, status, pageable);
+        } else {
+            page = rentalContractRepository.findByHouseIdWithFilters(houseId, search, status, pageable);
+        }
+
+        List<RentalContractResponse> content = page.getContent().stream()
+                .map(rentalContractMapper::toResponse)
+                .toList();
+
+        return toPageResponse(content, page);
+    }
+
+    /** Returns the house if the current user is the owner or an assigned manager, else denies. */
+    private House requireOwnerOrManager(Long houseId) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+
+        House house = houseRepository.findById(houseId)
+                .orElseThrow(() -> HouseNotFoundException.forId(houseId));
+
+        if (house.getOwner().getId().equals(currentUserId)) {
+            return house;
+        }
+
+        if (userHouseAccessRepository.existsByUserIdAndHouseId(currentUserId, houseId)) {
+            return house;
+        }
+
+        throw new AccessDeniedException("You do not have permission to access this resource");
+    }
+
     private House getOwnedHouse(Long id) {
-        Long currentUserId = getCurrentOwner().getId();
+        Long currentUserId = securityUtils.getCurrentUserId();
 
         return houseRepository.findById(id)
                 .map(house -> {
@@ -123,6 +285,12 @@ public class HouseServiceImpl implements HouseService {
                     return house;
                 })
                 .orElseThrow(() -> HouseNotFoundException.forId(id));
+    }
+
+    private void requireOwner() {
+        if (!securityUtils.hasRole(SecurityUtils.ROLE_OWNER)) {
+            throw new AccessDeniedException("You do not have permission to access this resource");
+        }
     }
 
     private void validateUniqueFields(Long ownerId, String name, String slug, String code, Long houseId) {
@@ -145,12 +313,12 @@ public class HouseServiceImpl implements HouseService {
         }
     }
 
-    private User getCurrentOwner() {
-        Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        UserDetails userDetails = (UserDetails) principal;
-
-        return userRepository.findByUsername(userDetails.getUsername())
-                .or(() -> userRepository.findByEmail(userDetails.getUsername()))
-                .orElseThrow(() -> UserNotFoundException.forId(null));
+    private <T> PageResponse<T> toPageResponse(List<T> content, Page<?> page) {
+        return PageResponse.of(
+                content,
+                page.getNumber(),
+                page.getSize(),
+                page.getTotalElements(),
+                page.getTotalPages());
     }
 }

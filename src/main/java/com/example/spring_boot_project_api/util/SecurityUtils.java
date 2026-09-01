@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import com.example.spring_boot_project_api.exception.UserNotFoundException;
 import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.repository.UserRepository;
+import com.example.spring_boot_project_api.repository.UserRoleRepository;
 
 import lombok.RequiredArgsConstructor;
 
@@ -19,7 +20,12 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class SecurityUtils {
 
+    public static final String ROLE_OWNER = "OWNER";
+    public static final String ROLE_MANAGER = "MANAGER";
+    public static final String ROLE_TENANT = "TENANT";
+
     private final UserRepository userRepository;
+    private final UserRoleRepository userRoleRepository;
 
     public User getCurrentUser() {
         Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
@@ -32,5 +38,15 @@ public class SecurityUtils {
 
     public Long getCurrentUserId() {
         return getCurrentUser().getId();
+    }
+
+    /** Whether the current user has the given role code (role codes are case-sensitive). */
+    public boolean hasRole(String roleCode) {
+        return userRoleRepository.existsByUserIdAndRoleCode(getCurrentUserId(), roleCode);
+    }
+
+    /** Whether the given user has the given role code. */
+    public boolean hasRole(Long userId, String roleCode) {
+        return userRoleRepository.existsByUserIdAndRoleCode(userId, roleCode);
     }
 }

@@ -1,7 +1,10 @@
 package com.example.spring_boot_project_api.service.impl;
 
+import java.time.LocalDate;
+import java.util.Collections;
 import java.util.List;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
@@ -10,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.example.spring_boot_project_api.dto.request.CreateTenantRequest;
 import com.example.spring_boot_project_api.dto.request.UpdateTenantRequest;
 import com.example.spring_boot_project_api.dto.response.TenantResponse;
+import com.example.spring_boot_project_api.enums.RentalContractStatus;
 import com.example.spring_boot_project_api.exception.DuplicateResourceException;
 import com.example.spring_boot_project_api.exception.TenantNotFoundException;
 import com.example.spring_boot_project_api.exception.UserNotFoundException;
@@ -18,8 +22,10 @@ import com.example.spring_boot_project_api.model.Tenant;
 import com.example.spring_boot_project_api.model.TenantStatus;
 import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.repository.TenantRepository;
+import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.TenantService;
+import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
 
@@ -29,18 +35,26 @@ public class TenantServiceImpl implements TenantService {
 
     private final TenantRepository tenantRepository;
     private final UserRepository userRepository;
+    private final UserHouseAccessRepository userHouseAccessRepository;
     private final TenantMapper tenantMapper;
+    private final SecurityUtils securityUtils;
 
     @Override
     @Transactional
     public TenantResponse createTenant(CreateTenantRequest request) {
         User owner = getCurrentOwner();
-        User tenantUser = userRepository.findById(request.userId())
-                .orElseThrow(() -> UserNotFoundException.forId(request.userId()));
 
-        if (tenantRepository.findByUserId(tenantUser.getId()).isPresent()) {
-            throw new DuplicateResourceException(
-                    "User already has a tenant profile: " + tenantUser.getUsername());
+        // The user link is optional: a tenant profile can exist without a login account.
+        User tenantUser = null;
+        if (request.userId() != null) {
+            tenantUser = userRepository.findById(request.userId())
+                    .orElseThrow(() -> UserNotFoundException.forId(request.userId()));
+
+            // A user account can be linked to at most one tenant profile.
+            if (tenantRepository.findByUserId(tenantUser.getId()).isPresent()) {
+                throw new DuplicateResourceException(
+                        "User already has a tenant profile: " + tenantUser.getUsername());
+            }
         }
 
         validateUniqueFields(owner.getId(), request.tenantCode(), request.phone(), null);
@@ -55,6 +69,24 @@ public class TenantServiceImpl implements TenantService {
     @Override
     @Transactional(readOnly = true)
     public List<TenantResponse> getMyTenants() {
+        Long currentUserId = securityUtils.getCurrentUserId();
+
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+            List<Long> assignedHouseIds = userHouseAccessRepository.findHouseIdsByUserId(currentUserId);
+            if (assignedHouseIds.isEmpty()) {
+                return Collections.emptyList();
+            }
+            return tenantRepository.findActiveTenantsByHouseIds(
+                    assignedHouseIds,
+                    RentalContractStatus.ACTIVE,
+                    LocalDate.now(),
+                    null,
+                    Pageable.unpaged()
+            ).getContent().stream()
+                    .map(tenantMapper::toResponse)
+                    .toList();
+        }
+
         User owner = getCurrentOwner();
         return tenantRepository.findAllByOwnerIdOrderByCreatedAtDesc(owner.getId()).stream()
                 .map(tenantMapper::toResponse)

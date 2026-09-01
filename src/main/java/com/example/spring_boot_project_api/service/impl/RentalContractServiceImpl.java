@@ -12,6 +12,7 @@ import com.example.spring_boot_project_api.model.RentalContract;
 import com.example.spring_boot_project_api.model.Room;
 import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
+import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.service.RentalContractService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
@@ -20,6 +21,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collections;
 import java.util.List;
 
 @Service
@@ -28,28 +30,28 @@ import java.util.List;
 public class RentalContractServiceImpl implements RentalContractService {
     private final RentalContractRepository contractRepository;
     private final RoomRepository roomRepository;
+    private final UserHouseAccessRepository userHouseAccessRepository;
     private final RentalContractMapper contractMapper;
     private final SecurityUtils securityUtils;
 
     @Override
     public RentalContractResponse createContract(RentalContractRequest request) {
         Long currentUserId = securityUtils.getCurrentUserId();
-        verifyRoomOwnership(request.getRoomId(), currentUserId);
+        Room targetRoom = resolveAccessibleRoom(request.getRoomId(), currentUserId);
 
-        Room targetRoom = roomRepository.findById(request.getRoomId())
-                .orElseThrow(() -> RoomNotFoundException.forId(request.getRoomId()));
         if (targetRoom.getStatus() == RoomStatus.OCCUPIED || contractRepository.existsByRoomIdAndStatus(request.getRoomId(), RentalContractStatus.ACTIVE)) {
             throw new DuplicateResourceException("Room " + targetRoom.getRoomNumber() + " is already occupied and cannot be assigned to a new contract.");
         }
 
-        contractRepository.findByOwnerIdAndContractNo(currentUserId, request.getContractNo())
+        Long ownerId = targetRoom.getOwnerId();
+        contractRepository.findByOwnerIdAndContractNo(ownerId, request.getContractNo())
                 .ifPresent(c -> {
                     throw new DuplicateResourceException(
                             "Contract number already exists for this owner: " + request.getContractNo());
                 });
 
         RentalContract contract = contractMapper.toEntity(request);
-        contract.setOwnerId(currentUserId);
+        contract.setOwnerId(ownerId);
         RentalContract savedContract = contractRepository.save(contract);
         syncRoomStatus(savedContract.getRoomId());
         return contractMapper.toResponse(savedContract);
@@ -58,14 +60,15 @@ public class RentalContractServiceImpl implements RentalContractService {
     @Override
     @Transactional(readOnly = true)
     public RentalContractResponse getContractById(Long id) {
-        return contractMapper.toResponse(getOwnedContract(id));
+        return contractMapper.toResponse(getAccessibleContract(id));
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<RentalContractResponse> getContractsByOwner(Long ownerId) {
-        return contractRepository.findByOwnerId(securityUtils.getCurrentUserId())
-                .stream()
+        Long currentUserId = securityUtils.getCurrentUserId();
+        List<RentalContract> contracts = getScopedContracts(currentUserId, null);
+        return contracts.stream()
                 .map(contractMapper::toResponse)
                 .toList();
     }
@@ -74,8 +77,8 @@ public class RentalContractServiceImpl implements RentalContractService {
     @Transactional(readOnly = true)
     public List<RentalContractResponse> getContractsByRoom(Long roomId) {
         Long currentUserId = securityUtils.getCurrentUserId();
-        verifyRoomOwnership(roomId, currentUserId);
-        return contractRepository.findByOwnerIdAndRoomId(currentUserId, roomId)
+        Room room = resolveAccessibleRoom(roomId, currentUserId);
+        return contractRepository.findByOwnerIdAndRoomId(room.getOwnerId(), roomId)
                 .stream()
                 .map(contractMapper::toResponse)
                 .toList();
@@ -84,17 +87,18 @@ public class RentalContractServiceImpl implements RentalContractService {
     @Override
     @Transactional(readOnly = true)
     public List<RentalContractResponse> getContractsByStatus(RentalContractStatus status) {
-        return contractRepository.findByOwnerIdAndStatus(securityUtils.getCurrentUserId(), status)
-                .stream()
+        Long currentUserId = securityUtils.getCurrentUserId();
+        List<RentalContract> contracts = getScopedContracts(currentUserId, status);
+        return contracts.stream()
                 .map(contractMapper::toResponse)
                 .toList();
     }
 
     @Override
     public RentalContractResponse updateContract(Long id, RentalContractRequest request) {
-        RentalContract existingContract = getOwnedContract(id);
+        RentalContract existingContract = getAccessibleContract(id);
         Long currentUserId = securityUtils.getCurrentUserId();
-        verifyRoomOwnership(request.getRoomId(), currentUserId);
+        Room targetRoom = resolveAccessibleRoom(request.getRoomId(), currentUserId);
 
         if (!existingContract.getRoomId().equals(request.getRoomId())) {
             Room newRoom = roomRepository.findById(request.getRoomId())
@@ -104,7 +108,8 @@ public class RentalContractServiceImpl implements RentalContractService {
             }
         }
 
-        contractRepository.findByOwnerIdAndContractNo(currentUserId, request.getContractNo())
+        Long ownerId = targetRoom.getOwnerId();
+        contractRepository.findByOwnerIdAndContractNo(ownerId, request.getContractNo())
                 .filter(c -> !c.getId().equals(id))
                 .ifPresent(c -> {
                     throw new DuplicateResourceException(
@@ -113,6 +118,7 @@ public class RentalContractServiceImpl implements RentalContractService {
 
         Long prevRoomId = existingContract.getRoomId();
         contractMapper.updateEntityFromDto(request, existingContract);
+        existingContract.setOwnerId(ownerId);
         RentalContract updatedContract = contractRepository.save(existingContract);
         syncRoomStatus(prevRoomId);
         if (!prevRoomId.equals(updatedContract.getRoomId())) {
@@ -123,7 +129,7 @@ public class RentalContractServiceImpl implements RentalContractService {
 
     @Override
     public RentalContractResponse updateStatus(Long id, RentalContractStatus status) {
-        RentalContract contract = getOwnedContract(id);
+        RentalContract contract = getAccessibleContract(id);
         contract.setStatus(status);
         RentalContract saved = contractRepository.save(contract);
         syncRoomStatus(contract.getRoomId());
@@ -132,7 +138,7 @@ public class RentalContractServiceImpl implements RentalContractService {
 
     @Override
     public void deleteContract(Long id) {
-        RentalContract contract = getOwnedContract(id);
+        RentalContract contract = getAccessibleContract(id);
         Long roomId = contract.getRoomId();
         contractRepository.delete(contract);
         syncRoomStatus(roomId);
@@ -152,23 +158,51 @@ public class RentalContractServiceImpl implements RentalContractService {
         });
     }
 
-    private RentalContract getOwnedContract(Long id) {
+    private RentalContract getAccessibleContract(Long id) {
         Long currentUserId = securityUtils.getCurrentUserId();
         return contractRepository.findById(id)
                 .map(contract -> {
-                    if (!contract.getOwnerId().equals(currentUserId)) {
-                        throw new AccessDeniedException(
-                                "You do not have permission to access this resource");
+                    if (canAccess(contract.getOwnerId(), contract.getRoomId(), currentUserId)) {
+                        return contract;
                     }
-                    return contract;
+                    throw new AccessDeniedException(
+                            "You do not have permission to access this resource");
                 })
                 .orElseThrow(() -> RentalContractNotFoundException.forId(id));
     }
 
-    private void verifyRoomOwnership(Long roomId, Long currentUserId) {
-        roomRepository.findById(roomId)
-                .filter(room -> room.getOwnerId().equals(currentUserId))
-                .map(Room::getId)
+    private Room resolveAccessibleRoom(Long roomId, Long currentUserId) {
+        return roomRepository.findById(roomId)
+                .map(room -> {
+                    if (canAccess(room.getOwnerId(), room.getHouseId(), currentUserId)) {
+                        return room;
+                    }
+                    throw new AccessDeniedException(
+                            "You do not have permission to access this resource");
+                })
                 .orElseThrow(() -> RoomNotFoundException.forId(roomId));
+    }
+
+    private boolean canAccess(Long ownerId, Long houseId, Long currentUserId) {
+        return ownerId.equals(currentUserId)
+                || (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)
+                        && userHouseAccessRepository.existsByUserIdAndHouseId(currentUserId, houseId));
+    }
+
+    private List<RentalContract> getScopedContracts(Long currentUserId, RentalContractStatus status) {
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+            List<Long> assignedHouseIds = userHouseAccessRepository.findHouseIdsByUserId(currentUserId);
+            if (assignedHouseIds.isEmpty()) {
+                return Collections.emptyList();
+            }
+            if (status != null) {
+                return contractRepository.findByRoomHouseIdInAndStatus(assignedHouseIds, status);
+            }
+            return contractRepository.findByRoomHouseIdIn(assignedHouseIds);
+        }
+        if (status != null) {
+            return contractRepository.findByOwnerIdAndStatus(currentUserId, status);
+        }
+        return contractRepository.findByOwnerId(currentUserId);
     }
 }

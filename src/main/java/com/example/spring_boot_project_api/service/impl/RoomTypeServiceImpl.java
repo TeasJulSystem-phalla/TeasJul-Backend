@@ -1,5 +1,6 @@
 package com.example.spring_boot_project_api.service.impl;
 
+import java.util.Collections;
 import java.util.List;
 
 import org.springframework.security.access.AccessDeniedException;
@@ -13,6 +14,7 @@ import com.example.spring_boot_project_api.exception.RoomTypeNotFoundException;
 import com.example.spring_boot_project_api.mapper.RoomTypeMapper;
 import com.example.spring_boot_project_api.model.RoomType;
 import com.example.spring_boot_project_api.repository.RoomTypeRepository;
+import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.service.RoomTypeService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
@@ -23,6 +25,7 @@ import lombok.RequiredArgsConstructor;
 public class RoomTypeServiceImpl implements RoomTypeService {
 
     private final RoomTypeRepository roomTypeRepository;
+    private final UserHouseAccessRepository userHouseAccessRepository;
     private final RoomTypeMapper roomTypeMapper;
     private final SecurityUtils securityUtils;
 
@@ -47,7 +50,7 @@ public class RoomTypeServiceImpl implements RoomTypeService {
     @Override
     @Transactional(readOnly = true)
     public List<RoomTypeResponse> getAllRoomTypes() {
-        return roomTypeRepository.findByOwnerId(securityUtils.getCurrentUserId()).stream()
+        return resolveScopedRoomTypes().stream()
                 .map(roomTypeMapper::toDto)
                 .toList();
     }
@@ -55,7 +58,7 @@ public class RoomTypeServiceImpl implements RoomTypeService {
     @Override
     @Transactional(readOnly = true)
     public List<RoomTypeResponse> getRoomTypesByOwner(Long ownerId) {
-        return roomTypeRepository.findByOwnerId(securityUtils.getCurrentUserId()).stream()
+        return resolveScopedRoomTypes().stream()
                 .map(roomTypeMapper::toDto)
                 .toList();
     }
@@ -83,6 +86,17 @@ public class RoomTypeServiceImpl implements RoomTypeService {
     public void deleteRoomType(Long id) {
         RoomType existing = getOwnedRoomType(id);
         roomTypeRepository.delete(existing);
+    }
+
+    private List<RoomType> resolveScopedRoomTypes() {
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+            List<Long> ownerIds = userHouseAccessRepository.findOwnerIdsByUserId(securityUtils.getCurrentUserId());
+            if (ownerIds.isEmpty()) {
+                return Collections.emptyList();
+            }
+            return roomTypeRepository.findByOwnerIdIn(ownerIds);
+        }
+        return roomTypeRepository.findByOwnerId(securityUtils.getCurrentUserId());
     }
 
     private RoomType getOwnedRoomType(Long id) {

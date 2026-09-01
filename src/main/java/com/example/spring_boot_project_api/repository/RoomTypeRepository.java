@@ -1,5 +1,6 @@
 package com.example.spring_boot_project_api.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -13,6 +14,8 @@ import com.example.spring_boot_project_api.model.RoomType;
 public interface RoomTypeRepository extends JpaRepository<RoomType, Long> {
 
     List<RoomType> findByOwnerId(Long ownerId);
+
+    List<RoomType> findByOwnerIdIn(Collection<Long> ownerIds);
 
     Optional<RoomType> findByCode(String code);
 

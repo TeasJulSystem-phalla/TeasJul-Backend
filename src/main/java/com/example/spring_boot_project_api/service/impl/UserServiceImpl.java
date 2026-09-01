@@ -2,6 +2,9 @@ package com.example.spring_boot_project_api.service.impl;
 
 import java.util.List;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -10,7 +13,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.example.spring_boot_project_api.dto.request.UpdateUserRequest;
+import com.example.spring_boot_project_api.dto.response.PageResponse;
 import com.example.spring_boot_project_api.dto.response.UserResponse;
+import com.example.spring_boot_project_api.dto.response.UserTenantCandidateResponse;
 import com.example.spring_boot_project_api.exception.UserNotFoundException;
 import com.example.spring_boot_project_api.mapper.UserMapper;
 import com.example.spring_boot_project_api.model.User;
@@ -24,6 +29,9 @@ import lombok.RequiredArgsConstructor;
 public class UserServiceImpl implements UserService, UserDetailsService {
 
     private static final String ROLE_USER = "ROLE_USER";
+
+    /** Hard cap on how many rows can be requested for the tenant-linking search. */
+    private static final int MAX_TENANT_SEARCH_SIZE = 50;
 
     private final UserRepository userRepository;
     private final UserMapper userMapper;
@@ -88,6 +96,35 @@ public class UserServiceImpl implements UserService, UserDetailsService {
     public void deleteUser(Long id) {
         User user = findEntityById(id);
         userRepository.delete(user);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<UserTenantCandidateResponse> searchAvailableForTenant(String q, Pageable pageable) {
+        Pageable capped = PageRequest.of(pageable.getPageNumber(),
+                Math.min(pageable.getPageSize(), MAX_TENANT_SEARCH_SIZE),
+                pageable.getSort());
+
+        Page<User> page = userRepository.findAvailableForTenant(normalize(q), capped);
+        List<UserTenantCandidateResponse> content = page.getContent().stream()
+                .map(UserServiceImpl::toCandidate)
+                .toList();
+        return PageResponse.of(content, page.getNumber(), page.getSize(),
+                page.getTotalElements(), page.getTotalPages());
+    }
+
+    private static String normalize(String q) {
+        return q == null ? null : q.trim();
+    }
+
+    private static UserTenantCandidateResponse toCandidate(User user) {
+        return new UserTenantCandidateResponse(
+                user.getId(),
+                user.getUsername(),
+                user.getFirstName(),
+                user.getLastName(),
+                user.getEmail(),
+                user.getPhone());
     }
 
     @Override

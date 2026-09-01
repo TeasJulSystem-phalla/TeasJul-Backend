@@ -14,7 +14,7 @@ public class TenantMapper {
     public TenantResponse toResponse(Tenant tenant) {
         return new TenantResponse(
                 tenant.getId(),
-                tenant.getUser().getId(),
+                tenant.getUser() != null ? tenant.getUser().getId() : null,
                 tenant.getOwner().getId(),
                 tenant.getTenantCode(),
                 tenant.getFirstName(),

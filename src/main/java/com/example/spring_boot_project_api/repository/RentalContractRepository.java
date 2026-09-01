@@ -5,6 +5,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -31,6 +33,18 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
 
     boolean existsByRoomIdAndStatus(Long roomId, RentalContractStatus status);
 
+    @Query("SELECT DISTINCT rc FROM RentalContract rc, Room r " +
+            "WHERE rc.roomId = r.id AND r.houseId IN :houseIds " +
+            "ORDER BY rc.updatedAt DESC")
+    List<RentalContract> findByRoomHouseIdIn(@Param("houseIds") Collection<Long> houseIds);
+
+    @Query("SELECT DISTINCT rc FROM RentalContract rc, Room r " +
+            "WHERE rc.roomId = r.id AND r.houseId IN :houseIds AND rc.status = :status " +
+            "ORDER BY rc.updatedAt DESC")
+    List<RentalContract> findByRoomHouseIdInAndStatus(
+            @Param("houseIds") Collection<Long> houseIds,
+            @Param("status") RentalContractStatus status);
+
     @Query("""
         SELECT new com.example.spring_boot_project_api.dto.response.ActiveRoomTenantDto(
             rc.roomId,
@@ -43,8 +57,8 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
         WHERE rc.id = ct.contractId
           AND ct.tenantId = t.id
           AND rc.roomId IN :roomIds
-          AND rc.ownerId = :ownerId
-          AND t.owner.id = :ownerId
+          AND rc.ownerId IN :ownerIds
+          AND t.owner.id IN :ownerIds
           AND rc.status = com.example.spring_boot_project_api.enums.RentalContractStatus.ACTIVE
           AND ct.joinedAt <= :currentDate
           AND (ct.leftAt IS NULL OR ct.leftAt >= :currentDate)
@@ -52,7 +66,42 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
     """)
     List<ActiveRoomTenantDto> findActiveTenantsByRoomIds(
             @Param("roomIds") Collection<Long> roomIds,
-            @Param("ownerId") Long ownerId,
+            @Param("ownerIds") Collection<Long> ownerIds,
             @Param("currentDate") LocalDate currentDate
     );
+
+    @Query("SELECT COUNT(rc) FROM RentalContract rc, Room r " +
+            "WHERE rc.roomId = r.id AND r.houseId = :houseId AND rc.ownerId = :ownerId " +
+            "AND rc.status = :status")
+    long countByHouseIdAndOwnerIdAndStatus(
+            @Param("houseId") Long houseId,
+            @Param("ownerId") Long ownerId,
+            @Param("status") RentalContractStatus status);
+
+    @Query("SELECT rc FROM RentalContract rc, Room r " +
+            "WHERE rc.roomId = r.id AND r.houseId = :houseId AND rc.ownerId = :ownerId " +
+            "AND (:search IS NULL OR UPPER(rc.contractNo) LIKE UPPER(CONCAT('%', :search, '%'))) " +
+            "AND (:status IS NULL OR rc.status = :status)")
+    Page<RentalContract> findByHouseIdWithFilters(
+            @Param("houseId") Long houseId,
+            @Param("ownerId") Long ownerId,
+            @Param("search") String search,
+            @Param("status") RentalContractStatus status,
+            Pageable pageable);
+
+    @Query("SELECT COUNT(rc) FROM RentalContract rc, Room r " +
+            "WHERE rc.roomId = r.id AND r.houseId = :houseId AND rc.status = :status")
+    long countByHouseIdAndStatus(
+            @Param("houseId") Long houseId,
+            @Param("status") RentalContractStatus status);
+
+    @Query("SELECT rc FROM RentalContract rc, Room r " +
+            "WHERE rc.roomId = r.id AND r.houseId = :houseId " +
+            "AND (:search IS NULL OR UPPER(rc.contractNo) LIKE UPPER(CONCAT('%', :search, '%'))) " +
+            "AND (:status IS NULL OR rc.status = :status)")
+    Page<RentalContract> findByHouseIdWithFilters(
+            @Param("houseId") Long houseId,
+            @Param("search") String search,
+            @Param("status") RentalContractStatus status,
+            Pageable pageable);
 }

@@ -30,6 +30,7 @@ import com.example.spring_boot_project_api.dto.response.UserResponse;
 import com.example.spring_boot_project_api.exception.UserNotFoundException;
 import com.example.spring_boot_project_api.model.UserStatus;
 import com.example.spring_boot_project_api.service.UserHouseAccessService;
+import com.example.spring_boot_project_api.service.UserRoleService;
 import com.example.spring_boot_project_api.service.UserService;
 import com.example.spring_boot_project_api.util.JwtUtil;
 
@@ -52,6 +53,9 @@ class UserControllerTest {
 
     @MockitoBean
     private UserHouseAccessService userHouseAccessService;
+
+    @MockitoBean
+    private UserRoleService userRoleService;
 
     @MockitoBean
     private UserDetailsService userDetailsService;
@@ -118,6 +122,19 @@ class UserControllerTest {
         mockMvc.perform(get("/api/v1/users/me")
                         .header("Authorization", "Bearer " + jwtUtil.generateToken("ghost")))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void getCurrentUserRolesShouldReturnRolesWithValidJwt() throws Exception {
+        when(userDetailsService.loadUserByUsername("johndoe")).thenReturn(springUser());
+        var role = new com.example.spring_boot_project_api.dto.response.RoleResponse(
+                1L, "Owner", "OWNER", "Owns houses", true, null, null);
+        when(userRoleService.getCurrentUserRoles()).thenReturn(List.of(role));
+
+        mockMvc.perform(get("/api/v1/users/me/roles")
+                        .header("Authorization", "Bearer " + validToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].code").value("OWNER"));
     }
 
     @Test

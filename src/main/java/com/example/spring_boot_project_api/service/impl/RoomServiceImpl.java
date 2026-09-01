@@ -20,9 +20,11 @@ import com.example.spring_boot_project_api.exception.RoomNotFoundException;
 import com.example.spring_boot_project_api.mapper.RoomMapper;
 import com.example.spring_boot_project_api.model.House;
 import com.example.spring_boot_project_api.model.Room;
+import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.repository.HouseRepository;
 import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
+import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.service.RoomService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
@@ -35,6 +37,7 @@ public class RoomServiceImpl implements RoomService {
     private final RoomRepository roomRepository;
     private final HouseRepository houseRepository;
     private final RentalContractRepository rentalContractRepository;
+    private final UserHouseAccessRepository userHouseAccessRepository;
     private final RoomMapper roomMapper;
     private final SecurityUtils securityUtils;
 
@@ -42,14 +45,14 @@ public class RoomServiceImpl implements RoomService {
     @Transactional
     public RoomResponse createRoom(RoomRepuest request) {
         Long currentUserId = securityUtils.getCurrentUserId();
-        verifyHouseOwnership(request.getHouseId(), currentUserId);
+        Long ownerId = resolveHouseOwnerId(request.getHouseId(), currentUserId);
 
         if (roomRepository.existsByHouseIdAndRoomNumber(request.getHouseId(), request.getRoomNumber())) {
             throw new DuplicateResourceException(
                     "Room number already exists in this house: " + request.getRoomNumber());
         }
         Room room = roomMapper.toEntity(request);
-        room.setOwnerId(currentUserId);
+        room.setOwnerId(ownerId);
         return roomMapper.toDto(roomRepository.save(room), null);
     }
 
@@ -57,8 +60,8 @@ public class RoomServiceImpl implements RoomService {
     @Transactional(readOnly = true)
     public RoomResponse getRoomById(Long id) {
         Long currentUserId = securityUtils.getCurrentUserId();
-        Room room = getOwnedRoom(id);
-        RoomTenantResponse tenant = getActiveTenantForRoom(room.getId(), currentUserId);
+        Room room = getAccessibleRoom(id);
+        RoomTenantResponse tenant = getActiveTenantForRoom(room);
         return roomMapper.toDto(room, tenant);
     }
 
@@ -66,8 +69,19 @@ public class RoomServiceImpl implements RoomService {
     @Transactional(readOnly = true)
     public List<RoomResponse> getAllRooms() {
         Long currentUserId = securityUtils.getCurrentUserId();
-        List<Room> rooms = roomRepository.findByOwnerId(currentUserId);
-        Map<Long, RoomTenantResponse> tenantMap = getActiveTenantsForRooms(rooms, currentUserId);
+        List<Room> rooms;
+
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+            List<Long> assignedHouseIds = userHouseAccessRepository.findHouseIdsByUserId(currentUserId);
+            if (assignedHouseIds.isEmpty()) {
+                return Collections.emptyList();
+            }
+            rooms = roomRepository.findByHouseIdIn(assignedHouseIds);
+        } else {
+            rooms = roomRepository.findByOwnerId(currentUserId);
+        }
+
+        Map<Long, RoomTenantResponse> tenantMap = getActiveTenantsForRooms(rooms);
         return rooms.stream()
                 .map(room -> roomMapper.toDto(room, tenantMap.get(room.getId())))
                 .toList();
@@ -77,9 +91,9 @@ public class RoomServiceImpl implements RoomService {
     @Transactional(readOnly = true)
     public List<RoomResponse> getRoomsByHouse(Long houseId) {
         Long currentUserId = securityUtils.getCurrentUserId();
-        verifyHouseOwnership(houseId, currentUserId);
+        verifyHouseAccess(houseId, currentUserId);
         List<Room> rooms = roomRepository.findByHouseId(houseId);
-        Map<Long, RoomTenantResponse> tenantMap = getActiveTenantsForRooms(rooms, currentUserId);
+        Map<Long, RoomTenantResponse> tenantMap = getActiveTenantsForRooms(rooms);
         return rooms.stream()
                 .map(room -> roomMapper.toDto(room, tenantMap.get(room.getId())))
                 .toList();
@@ -88,9 +102,9 @@ public class RoomServiceImpl implements RoomService {
     @Override
     @Transactional
     public RoomResponse updateRoom(Long id, RoomRepuest request) {
-        Room existing = getOwnedRoom(id);
+        Room existing = getAccessibleRoom(id);
         Long currentUserId = securityUtils.getCurrentUserId();
-        verifyHouseOwnership(request.getHouseId(), currentUserId);
+        verifyHouseAccess(request.getHouseId(), currentUserId);
 
         if (!existing.getRoomNumber().equals(request.getRoomNumber())
                 && roomRepository.existsByHouseIdAndRoomNumber(request.getHouseId(), request.getRoomNumber())) {
@@ -118,24 +132,25 @@ public class RoomServiceImpl implements RoomService {
         existing.setDescription(request.getDescription());
 
         Room saved = roomRepository.save(existing);
-        RoomTenantResponse tenant = getActiveTenantForRoom(saved.getId(), currentUserId);
+        RoomTenantResponse tenant = getActiveTenantForRoom(saved);
         return roomMapper.toDto(saved, tenant);
     }
 
     @Override
     @Transactional
     public void deleteRoom(Long id) {
-        Room existing = getOwnedRoom(id);
+        Room existing = getAccessibleRoom(id);
         roomRepository.delete(existing);
     }
 
-    private Map<Long, RoomTenantResponse> getActiveTenantsForRooms(List<Room> rooms, Long ownerId) {
+    private Map<Long, RoomTenantResponse> getActiveTenantsForRooms(List<Room> rooms) {
         if (rooms == null || rooms.isEmpty()) {
             return Collections.emptyMap();
         }
         List<Long> roomIds = rooms.stream().map(Room::getId).toList();
+        List<Long> ownerIds = rooms.stream().map(Room::getOwnerId).distinct().toList();
         List<ActiveRoomTenantDto> activeTenants = rentalContractRepository.findActiveTenantsByRoomIds(
-                roomIds, ownerId, LocalDate.now()
+                roomIds, ownerIds, LocalDate.now()
         );
         Map<Long, RoomTenantResponse> map = new HashMap<>();
         for (ActiveRoomTenantDto item : activeTenants) {
@@ -144,9 +159,9 @@ public class RoomServiceImpl implements RoomService {
         return map;
     }
 
-    private RoomTenantResponse getActiveTenantForRoom(Long roomId, Long ownerId) {
+    private RoomTenantResponse getActiveTenantForRoom(Room room) {
         List<ActiveRoomTenantDto> list = rentalContractRepository.findActiveTenantsByRoomIds(
-                List.of(roomId), ownerId, LocalDate.now()
+                List.of(room.getId()), List.of(room.getOwnerId()), LocalDate.now()
         );
         if (list.isEmpty()) {
             return null;
@@ -155,22 +170,55 @@ public class RoomServiceImpl implements RoomService {
         return new RoomTenantResponse(item.tenantId(), item.firstName(), item.lastName());
     }
 
-    private Room getOwnedRoom(Long id) {
+    private Room getAccessibleRoom(Long id) {
         Long currentUserId = securityUtils.getCurrentUserId();
         return roomRepository.findById(id)
                 .map(room -> {
-                    if (!room.getOwnerId().equals(currentUserId)) {
-                        throw new AccessDeniedException(
-                                "You do not have permission to access this resource");
+                    if (canAccess(room, currentUserId)) {
+                        return room;
                     }
-                    return room;
+                    throw new AccessDeniedException(
+                            "You do not have permission to access this resource");
                 })
                 .orElseThrow(() -> RoomNotFoundException.forId(id));
+    }
+
+    private boolean canAccess(Room room, Long currentUserId) {
+        return room.getOwnerId().equals(currentUserId)
+                || (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)
+                        && userHouseAccessRepository.existsByUserIdAndHouseId(currentUserId, room.getHouseId()));
     }
 
     private void verifyHouseOwnership(Long houseId, Long currentUserId) {
         houseRepository.findByIdAndOwnerId(houseId, currentUserId)
                 .map(House::getId)
+                .orElseThrow(() -> HouseNotFoundException.forId(houseId));
+    }
+
+    private void verifyHouseAccess(Long houseId, Long currentUserId) {
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+            if (!userHouseAccessRepository.existsByUserIdAndHouseId(currentUserId, houseId)) {
+                throw new AccessDeniedException(
+                        "You do not have permission to access this house");
+            }
+        } else {
+            verifyHouseOwnership(houseId, currentUserId);
+        }
+    }
+
+    private Long resolveHouseOwnerId(Long houseId, Long currentUserId) {
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+            House house = houseRepository.findById(houseId)
+                    .orElseThrow(() -> HouseNotFoundException.forId(houseId));
+            if (!userHouseAccessRepository.existsByUserIdAndHouseId(currentUserId, houseId)) {
+                throw new AccessDeniedException(
+                        "You do not have permission to access this house");
+            }
+            return house.getOwner().getId();
+        }
+        return houseRepository.findByIdAndOwnerId(houseId, currentUserId)
+                .map(House::getOwner)
+                .map(User::getId)
                 .orElseThrow(() -> HouseNotFoundException.forId(houseId));
     }
 }

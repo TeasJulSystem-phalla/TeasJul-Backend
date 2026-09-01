@@ -37,8 +37,8 @@ public class Tenant {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "user_id", nullable = false, foreignKey = @ForeignKey(name = "fk_tenants_user"))
+    @ManyToOne(fetch = FetchType.LAZY, optional = true)
+    @JoinColumn(name = "user_id", nullable = true, foreignKey = @ForeignKey(name = "fk_tenants_user"))
     private User user;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)

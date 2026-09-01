@@ -209,6 +209,42 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(InvitationNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleInvitationNotFound(InvitationNotFoundException ex,
+            HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvalidInvitationTokenException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidInvitationToken(
+            InvalidInvitationTokenException ex, HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvitationExpiredException.class)
+    public ResponseEntity<ErrorResponse> handleInvitationExpired(InvitationExpiredException ex,
+            HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvitationRevokedException.class)
+    public ResponseEntity<ErrorResponse> handleInvitationRevoked(InvitationRevokedException ex,
+            HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvitationAlreadyUsedException.class)
+    public ResponseEntity<ErrorResponse> handleInvitationAlreadyUsed(
+            InvitationAlreadyUsedException ex, HttpServletRequest request) {
+        return build(HttpStatus.CONFLICT, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvitationEmailMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleInvitationEmailMismatch(
+            InvitationEmailMismatchException ex, HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ErrorResponse> handleNoResource(NoResourceFoundException ex,
             HttpServletRequest request) {

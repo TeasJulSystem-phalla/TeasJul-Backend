@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.spring_boot_project_api.dto.request.GrantHouseAccessRequest;
 import com.example.spring_boot_project_api.dto.response.UserHouseAccessResponse;
+import com.example.spring_boot_project_api.dto.response.UserResponse;
 import com.example.spring_boot_project_api.service.UserHouseAccessService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -31,6 +32,19 @@ import lombok.RequiredArgsConstructor;
 public class UserHouseAccessController {
 
     private final UserHouseAccessService userHouseAccessService;
+
+    @Operation(summary = "List MANAGER users available to grant access to a house",
+            description = "OWNER only: returns all users with the MANAGER role who do not already have access to the given house.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "List of candidate users"),
+            @ApiResponse(responseCode = "401", description = "Unauthenticated"),
+            @ApiResponse(responseCode = "403", description = "Authenticated user is not the owner of the house"),
+            @ApiResponse(responseCode = "404", description = "House not found")
+    })
+    @GetMapping("/{houseId}/access/candidates")
+    public ResponseEntity<List<UserResponse>> getAccessCandidates(@PathVariable Long houseId) {
+        return ResponseEntity.ok(userHouseAccessService.getAccessCandidates(houseId));
+    }
 
     @Operation(summary = "Grant a user access to a house",
             description = "OWNER only: grants the target user access to the given house. Requires JWT authentication. "

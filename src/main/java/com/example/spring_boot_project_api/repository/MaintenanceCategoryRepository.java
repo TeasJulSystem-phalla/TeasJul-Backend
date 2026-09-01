@@ -1,5 +1,6 @@
 package com.example.spring_boot_project_api.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -14,6 +15,8 @@ public interface MaintenanceCategoryRepository extends JpaRepository<Maintenance
     Optional<MaintenanceCategory> findByIdAndOwnerId(Long id, Long ownerId);
 
     List<MaintenanceCategory> findAllByOwnerIdOrderByCreatedAtDesc(Long ownerId);
+
+    List<MaintenanceCategory> findAllByOwnerIdInOrderByCreatedAtDesc(Collection<Long> ownerIds);
 
     boolean existsByOwnerIdAndName(Long ownerId, String name);
 

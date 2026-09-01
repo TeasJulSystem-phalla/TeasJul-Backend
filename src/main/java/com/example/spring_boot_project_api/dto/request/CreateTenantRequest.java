@@ -7,12 +7,12 @@ import com.example.spring_boot_project_api.model.OccupationType;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 public record CreateTenantRequest(
 
-        @NotNull(message = "User id is required")
+        // Optional. When provided, links this tenant profile to an existing user
+        // login account. When null, a tenant profile is created without a user account.
         Long userId,
 
         @NotBlank(message = "Tenant code is required")

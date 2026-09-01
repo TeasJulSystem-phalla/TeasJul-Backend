@@ -19,6 +19,7 @@ import com.example.spring_boot_project_api.repository.RoleRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.repository.UserRoleRepository;
 import com.example.spring_boot_project_api.service.UserRoleService;
+import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
 
@@ -30,6 +31,7 @@ public class UserRoleServiceImpl implements UserRoleService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final RoleMapper roleMapper;
+    private final SecurityUtils securityUtils;
 
     @Override
     @Transactional(readOnly = true)
@@ -37,6 +39,14 @@ public class UserRoleServiceImpl implements UserRoleService {
         getUserOrThrow(userId);
 
         return userRoleRepository.findByUserId(userId).stream()
+                .map(assignment -> roleMapper.toResponse(assignment.getRole()))
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<RoleResponse> getCurrentUserRoles() {
+        return userRoleRepository.findByUserId(securityUtils.getCurrentUserId()).stream()
                 .map(assignment -> roleMapper.toResponse(assignment.getRole()))
                 .toList();
     }

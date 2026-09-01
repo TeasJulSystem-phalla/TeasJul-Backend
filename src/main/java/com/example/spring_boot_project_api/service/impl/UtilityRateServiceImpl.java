@@ -28,10 +28,12 @@ import com.example.spring_boot_project_api.model.House;
 import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.model.UtilityRate;
 import com.example.spring_boot_project_api.repository.HouseRepository;
+import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.repository.UtilityRateRepository;
 import com.example.spring_boot_project_api.repository.UtilityTypeRepository;
 import com.example.spring_boot_project_api.service.UtilityRateService;
+import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
@@ -44,7 +46,9 @@ public class UtilityRateServiceImpl implements UtilityRateService {
     private final HouseRepository houseRepository;
     private final UtilityTypeRepository typeRepository;
     private final UserRepository userRepository;
+    private final UserHouseAccessRepository userHouseAccessRepository;
     private final UtilityRateMapper rateMapper;
+    private final SecurityUtils securityUtils;
 
     @Override
     @Transactional
@@ -70,11 +74,16 @@ public class UtilityRateServiceImpl implements UtilityRateService {
             UtilityRateStatus status, LocalDate effectiveFrom, LocalDate effectiveTo,
             Pageable pageable) {
         Long ownerId = getCurrentOwner().getId();
+        List<Long> scopedHouseIds = securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)
+                ? resolveApprovedHouseIds(houseId)
+                : null;
 
         Specification<UtilityRate> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.equal(root.get("owner").get("id"), ownerId));
-            if (houseId != null) {
+            if (scopedHouseIds != null) {
+                predicates.add(root.get("houseId").in(scopedHouseIds));
+            } else if (houseId != null) {
                 predicates.add(cb.equal(root.get("houseId"), houseId));
             }
             if (utilityTypeId != null) {
@@ -192,6 +201,17 @@ public class UtilityRateServiceImpl implements UtilityRateService {
         Long currentUserId = getCurrentOwner().getId();
         return rateRepository.findByIdAndOwnerId(id, currentUserId)
                 .orElseThrow(() -> UtilityRateNotFoundException.forId(id));
+    }
+
+    private List<Long> resolveApprovedHouseIds(Long requestedHouseId) {
+        List<Long> assigned = userHouseAccessRepository.findHouseIdsByUserId(securityUtils.getCurrentUserId());
+        if (assigned.isEmpty()) {
+            return List.of(-1L);
+        }
+        if (requestedHouseId != null && !assigned.contains(requestedHouseId)) {
+            return List.of(-1L);
+        }
+        return requestedHouseId != null ? List.of(requestedHouseId) : assigned;
     }
 
     private PageResponse<UtilityRateResponse> toPageResponse(Page<UtilityRate> page) {

@@ -5,6 +5,7 @@ import com.example.spring_boot_project_api.model.Amenity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -14,11 +15,15 @@ public interface AmenityRepository extends JpaRepository<Amenity, Long> {
 
     List<Amenity> findByOwnerIdOrderByCreatedAtDesc(Long ownerId);
 
+    List<Amenity> findByOwnerIdInOrderByCreatedAtDesc(Collection<Long> ownerIds);
+
+    List<Amenity> findByOwnerIdAndStatus(Long ownerId, AmenityStatus status);
+
+    List<Amenity> findByOwnerIdInAndStatus(Collection<Long> ownerIds, AmenityStatus status);
+
     Optional<Amenity> findByOwnerIdAndCode(Long ownerId, String code);
 
     Optional<Amenity> findByOwnerIdAndName(Long ownerId, String name);
-
-    List<Amenity> findByOwnerIdAndStatus(Long ownerId, AmenityStatus status);
 
     boolean existsByOwnerIdAndCode(Long ownerId, String code);
 

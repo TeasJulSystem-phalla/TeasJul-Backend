@@ -22,9 +22,11 @@ import com.example.spring_boot_project_api.exception.UtilityTypeNotFoundExceptio
 import com.example.spring_boot_project_api.mapper.UtilityTypeMapper;
 import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.model.UtilityType;
+import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.repository.UtilityTypeRepository;
 import com.example.spring_boot_project_api.service.UtilityTypeService;
+import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +37,9 @@ public class UtilityTypeServiceImpl implements UtilityTypeService {
 
     private final UtilityTypeRepository typeRepository;
     private final UserRepository userRepository;
+    private final UserHouseAccessRepository userHouseAccessRepository;
     private final UtilityTypeMapper typeMapper;
+    private final SecurityUtils securityUtils;
 
     @Override
     @Transactional
@@ -54,11 +58,14 @@ public class UtilityTypeServiceImpl implements UtilityTypeService {
     @Transactional(readOnly = true)
     public PageResponse<UtilityTypeResponse> getTypes(String search, UtilityTypeStatus status,
             Pageable pageable) {
-        Long ownerId = getCurrentOwner().getId();
+        List<Long> scopedOwnerIds = resolveScopedOwnerIds();
+        if (scopedOwnerIds.isEmpty()) {
+            return PageResponse.of(List.of(), pageable.getPageNumber(), pageable.getPageSize(), 0, 0);
+        }
 
         Specification<UtilityType> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
-            predicates.add(cb.equal(root.get("owner").get("id"), ownerId));
+            predicates.add(root.get("owner").get("id").in(scopedOwnerIds));
             if (status != null) {
                 predicates.add(cb.equal(root.get("status"), status));
             }
@@ -133,6 +140,13 @@ public class UtilityTypeServiceImpl implements UtilityTypeService {
             throw new DuplicateResourceException(
                     "Utility type code already exists for this owner: " + code);
         }
+    }
+
+    private List<Long> resolveScopedOwnerIds() {
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+            return userHouseAccessRepository.findOwnerIdsByUserId(securityUtils.getCurrentUserId());
+        }
+        return List.of(getCurrentOwner().getId());
     }
 
     private PageResponse<UtilityTypeResponse> toPageResponse(Page<UtilityType> page) {

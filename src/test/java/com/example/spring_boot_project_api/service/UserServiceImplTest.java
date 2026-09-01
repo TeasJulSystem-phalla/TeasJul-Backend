@@ -3,6 +3,7 @@ package com.example.spring_boot_project_api.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -17,12 +18,18 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import com.example.spring_boot_project_api.dto.request.UpdateUserRequest;
+import com.example.spring_boot_project_api.dto.response.PageResponse;
 import com.example.spring_boot_project_api.dto.response.UserResponse;
+import com.example.spring_boot_project_api.dto.response.UserTenantCandidateResponse;
 import com.example.spring_boot_project_api.exception.UserNotFoundException;
 import com.example.spring_boot_project_api.mapper.UserMapper;
 import com.example.spring_boot_project_api.model.User;
@@ -136,5 +143,88 @@ class UserServiceImplTest {
                 org.mockito.ArgumentCaptor.forClass(User.class);
         verify(userRepository).delete(captor.capture());
         assertThat(captor.getValue()).isSameAs(existing);
+    }
+
+    // ---- Search available for tenant ----
+
+    private User candidate() {
+        return User.builder()
+                .id(25L)
+                .username("darasok")
+                .email("dara@gmail.com")
+                .passwordHash("hashed")
+                .firstName("Dara")
+                .lastName("Sok")
+                .phone("012345678")
+                .status(UserStatus.ACTIVE)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+    }
+
+    @Test
+    void searchAvailableForTenantReturnsPagedProjectsAndTrimsQuery() {
+        Page<User> page = new PageImpl<>(List.of(candidate()), PageRequest.of(0, 10), 1);
+
+        when(userRepository.findAvailableForTenant(eq("dara"), any(Pageable.class)))
+                .thenReturn(page);
+
+        PageResponse<UserTenantCandidateResponse> response =
+                userService.searchAvailableForTenant("  dara  ", PageRequest.of(0, 10));
+
+        assertThat(response.content()).hasSize(1);
+        UserTenantCandidateResponse item = response.content().get(0);
+        assertThat(item.id()).isEqualTo(25L);
+        assertThat(item.firstName()).isEqualTo("Dara");
+        assertThat(item.lastName()).isEqualTo("Sok");
+        assertThat(item.email()).isEqualTo("dara@gmail.com");
+        assertThat(item.phone()).isEqualTo("012345678");
+        assertThat(response.totalElements()).isEqualTo(1);
+        assertThat(response.totalPages()).isEqualTo(1);
+        assertThat(response.page()).isZero();
+        assertThat(response.size()).isEqualTo(10);
+    }
+
+    @Test
+    void searchAvailableForTenantExposesNoSensitiveFields() {
+        Page<User> page = new PageImpl<>(List.of(candidate()), PageRequest.of(0, 10), 1);
+        when(userRepository.findAvailableForTenant(eq("dara"), any(Pageable.class))).thenReturn(page);
+
+        UserTenantCandidateResponse item =
+                userService.searchAvailableForTenant("dara", PageRequest.of(0, 10)).content().get(0);
+
+        assertThat(item.username()).isNotBlank();
+        // passwordHash / tokens etc. are simply not part of the DTO
+    }
+
+    @Test
+    void searchAvailableForTenantCapsPageSize() {
+        User one = candidate();
+        User two = candidate();
+        two.setId(26L);
+        Page<User> page = new PageImpl<>(List.of(one, two), PageRequest.of(0, 10), 2);
+        when(userRepository.findAvailableForTenant(eq("x"), any(Pageable.class))).thenReturn(page);
+
+        PageResponse<UserTenantCandidateResponse> response =
+                userService.searchAvailableForTenant("x", PageRequest.of(0, 99999));
+
+        assertThat(response.content()).hasSize(2);
+
+        org.mockito.ArgumentCaptor<Pageable> captor =
+                org.mockito.ArgumentCaptor.forClass(Pageable.class);
+        verify(userRepository).findAvailableForTenant(eq("x"), captor.capture());
+        assertThat(captor.getValue().getPageSize()).isEqualTo(50);
+    }
+
+    @Test
+    void searchAvailableForTenantEmptyQueryPassedAsNullDoesNotCrash() {
+        when(userRepository.findAvailableForTenant(eq(null), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 10), 0));
+
+        PageResponse<UserTenantCandidateResponse> response =
+                userService.searchAvailableForTenant(null, PageRequest.of(0, 10));
+
+        assertThat(response.content()).isEmpty();
+        assertThat(response.totalElements()).isZero();
     }
 }
