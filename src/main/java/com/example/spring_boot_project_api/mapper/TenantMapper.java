@@ -16,6 +16,8 @@ public class TenantMapper {
                 tenant.getId(),
                 tenant.getUser() != null ? tenant.getUser().getId() : null,
                 tenant.getOwner().getId(),
+                tenant.getHouse() != null ? tenant.getHouse().getId() : null,
+                tenant.getInvitedBy() != null ? tenant.getInvitedBy().getId() : null,
                 tenant.getTenantCode(),
                 tenant.getFirstName(),
                 tenant.getLastName(),

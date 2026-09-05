@@ -1,6 +1,7 @@
 package com.example.spring_boot_project_api.controller;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -17,6 +18,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.spring_boot_project_api.dto.request.CreateUtilityReadingRequest;
+import com.example.spring_boot_project_api.dto.request.MonthlyReadingBulkRequest;
+import com.example.spring_boot_project_api.dto.response.BulkUtilityReadingResponse;
+import com.example.spring_boot_project_api.dto.response.MonthlyReadingRowResponse;
 import com.example.spring_boot_project_api.dto.response.PageResponse;
 import com.example.spring_boot_project_api.dto.response.UtilityReadingResponse;
 import com.example.spring_boot_project_api.service.UtilityReadingService;
@@ -58,11 +62,32 @@ public class UtilityReadingController {
         return ResponseEntity.ok(utilityReadingService.getReadings(meterId, fromDate, toDate, pageable));
     }
 
+    @Operation(summary = "Monthly meter-reading sheet",
+            description = "Returns one row per ACTIVE meter of the house for the given billing "
+                    + "month. Each row carries the previous reading (last reading before the "
+                    + "month) and the current reading already recorded inside the month, if any.")
+    @GetMapping("/monthly-sheet")
+    public ResponseEntity<List<MonthlyReadingRowResponse>> getMonthlySheet(
+            @RequestParam Long houseId,
+            @RequestParam Integer year,
+            @RequestParam Integer month) {
+        return ResponseEntity.ok(utilityReadingService.getMonthlySheet(houseId, year, month));
+    }
+
     @Operation(summary = "Get a utility reading by id",
             description = "Returns the utility reading with the given id if it belongs to a meter "
                     + "owned by the currently authenticated user.")
     @GetMapping("/{id}")
     public ResponseEntity<UtilityReadingResponse> getReadingById(@PathVariable Long id) {
         return ResponseEntity.ok(utilityReadingService.getReadingById(id));
+    }
+
+    @Operation(summary = "Save the monthly meter-reading sheet",
+            description = "Creates or updates the readings for a whole house in one call. "
+                    + "Usage is recalculated on the server from the last reading before the month.")
+    @PostMapping("/bulk")
+    public ResponseEntity<BulkUtilityReadingResponse> createReadingsBulk(
+            @Valid @RequestBody MonthlyReadingBulkRequest request) {
+        return ResponseEntity.ok(utilityReadingService.createReadingsBulk(request));
     }
 }

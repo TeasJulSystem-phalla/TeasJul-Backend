@@ -5,6 +5,7 @@ import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -21,6 +22,7 @@ import com.example.spring_boot_project_api.mapper.UserMapper;
 import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.UserService;
+import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
 
@@ -35,6 +37,7 @@ public class UserServiceImpl implements UserService, UserDetailsService {
 
     private final UserRepository userRepository;
     private final UserMapper userMapper;
+    private final SecurityUtils securityUtils;
 
     @Override
     @Transactional
@@ -45,6 +48,10 @@ public class UserServiceImpl implements UserService, UserDetailsService {
     @Override
     @Transactional(readOnly = true)
     public UserResponse getUserById(Long id) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        if (!id.equals(currentUserId)) {
+            requireOwner();
+        }
         User user = findEntityById(id);
         return userMapper.toResponse(user);
     }
@@ -65,6 +72,7 @@ public class UserServiceImpl implements UserService, UserDetailsService {
     @Override
     @Transactional(readOnly = true)
     public List<UserResponse> getAllUsers() {
+        requireOwner();
         return userRepository.findAll().stream()
                 .map(userMapper::toResponse)
                 .toList();
@@ -73,6 +81,10 @@ public class UserServiceImpl implements UserService, UserDetailsService {
     @Override
     @Transactional
     public UserResponse updateUser(Long id, UpdateUserRequest request) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        if (!id.equals(currentUserId)) {
+            requireOwner();
+        }
         User user = findEntityById(id);
 
         if (request.firstName() != null) {
@@ -94,6 +106,7 @@ public class UserServiceImpl implements UserService, UserDetailsService {
     @Override
     @Transactional
     public void deleteUser(Long id) {
+        requireOwner();
         User user = findEntityById(id);
         userRepository.delete(user);
     }
@@ -149,5 +162,11 @@ public class UserServiceImpl implements UserService, UserDetailsService {
     private User findEntityById(Long id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> UserNotFoundException.forId(id));
+    }
+
+    private void requireOwner() {
+        if (!securityUtils.hasRole(SecurityUtils.ROLE_OWNER)) {
+            throw new AccessDeniedException("You do not have permission to access this resource");
+        }
     }
 }

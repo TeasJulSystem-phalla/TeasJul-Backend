@@ -15,7 +15,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.spring_boot_project_api.dto.request.CreateTenantRequest;
 import com.example.spring_boot_project_api.dto.request.UpdateTenantRequest;
+import com.example.spring_boot_project_api.dto.response.TenantMeResponse;
 import com.example.spring_boot_project_api.dto.response.TenantResponse;
+import com.example.spring_boot_project_api.dto.response.TenantUtilityResponse;
+import com.example.spring_boot_project_api.service.TenantPortalService;
 import com.example.spring_boot_project_api.service.TenantService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -30,6 +33,32 @@ import lombok.RequiredArgsConstructor;
 public class TenantController {
 
     private final TenantService tenantService;
+    private final TenantPortalService tenantPortalService;
+
+    @Operation(summary = "Get my tenant portal profile",
+            description = "Returns the tenant profile linked to the currently authenticated user "
+                    + "together with the active rental contract, room and house, if any.")
+    @GetMapping("/me")
+    public ResponseEntity<TenantMeResponse> getMyPortalProfile() {
+        return ResponseEntity.ok(tenantPortalService.getMyTenantProfile());
+    }
+
+    @Operation(summary = "Update my tenant portal profile",
+            description = "Updates the tenant profile linked to the currently authenticated user. "
+                    + "Only the fields that are provided will be updated.")
+    @PutMapping("/me")
+    public ResponseEntity<TenantMeResponse> updateMyPortalProfile(
+            @Valid @RequestBody UpdateTenantRequest request) {
+        return ResponseEntity.ok(tenantPortalService.updateMyTenantProfile(request));
+    }
+
+    @Operation(summary = "Get my utility usage",
+            description = "Returns the active utility meters of the room tied to the current tenant's "
+                    + "active rental contract, together with their latest reading.")
+    @GetMapping("/me/utilities")
+    public ResponseEntity<List<TenantUtilityResponse>> getMyUtilities() {
+        return ResponseEntity.ok(tenantPortalService.getMyUtilities());
+    }
 
     @Operation(summary = "Create a tenant",
             description = "Creates a tenant owned by the currently authenticated user. "

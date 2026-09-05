@@ -14,6 +14,8 @@ public record CreateUtilityTypeRequest(
 
         @NotBlank(message = "Unit is required")
         @Size(max = 30, message = "Unit must not exceed 30 characters")
-        String unit
+        String unit,
+
+        com.example.spring_boot_project_api.enums.UtilityBillingMethod billingMethod
 ) {
 }

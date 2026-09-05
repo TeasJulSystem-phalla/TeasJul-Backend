@@ -11,6 +11,8 @@ public record TenantResponse(
         Long id,
         Long userId,
         Long ownerId,
+        Long houseId,
+        Long invitedById,
         String tenantCode,
         String firstName,
         String lastName,

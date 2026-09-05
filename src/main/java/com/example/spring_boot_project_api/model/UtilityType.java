@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import com.example.spring_boot_project_api.enums.UtilityBillingMethod;
 import com.example.spring_boot_project_api.enums.UtilityTypeStatus;
 
 import jakarta.persistence.Column;
@@ -33,7 +34,6 @@ import lombok.Setter;
 @AllArgsConstructor
 @Builder
 public class UtilityType {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -50,6 +50,11 @@ public class UtilityType {
 
     @Column(name = "unit", nullable = false, length = 30)
     private String unit;
+
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "billing_method", nullable = false, length = 20)
+    private UtilityBillingMethod billingMethod = UtilityBillingMethod.METERED;
 
     @Builder.Default
     @Enumerated(EnumType.STRING)

@@ -79,4 +79,12 @@ public interface TenantRepository extends JpaRepository<Tenant, Long> {
             @Param("currentDate") LocalDate currentDate,
             @Param("search") String search,
             Pageable pageable);
+
+    @Query("SELECT DISTINCT t FROM Tenant t WHERE t.house.id IN :houseIds ORDER BY t.createdAt DESC")
+    List<Tenant> findAllByHouseIdsOrderByCreatedAtDesc(@Param("houseIds") Collection<Long> houseIds);
+
+    @Query("SELECT t FROM Tenant t WHERE t.invitedBy.id = :managerId " +
+            "OR (t.owner.id = :managerId AND t.invitedBy IS NULL) " +
+            "ORDER BY t.createdAt DESC")
+    List<Tenant> findAllVisibleToManagerOrderByCreatedAtDesc(@Param("managerId") Long managerId);
 }

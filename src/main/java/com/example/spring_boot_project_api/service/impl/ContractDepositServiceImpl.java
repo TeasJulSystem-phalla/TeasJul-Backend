@@ -18,6 +18,7 @@ import com.example.spring_boot_project_api.model.RentalContract;
 import com.example.spring_boot_project_api.repository.ContractDepositRepository;
 import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.service.ContractDepositService;
+import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -28,6 +29,7 @@ public class ContractDepositServiceImpl implements ContractDepositService {
     private final ContractDepositRepository depositRepository;
     private final RentalContractRepository contractRepository;
     private final SecurityUtils securityUtils;
+    private final HouseAccessService houseAccessService;
 
     @Override
     @Transactional
@@ -76,26 +78,15 @@ public class ContractDepositServiceImpl implements ContractDepositService {
     private ContractDeposit getOwnedDeposit(Long depositId) {
         ContractDeposit deposit = depositRepository.findById(depositId)
                 .orElseThrow(() -> ContractDepositNotFoundException.forId(depositId));
-
-        Long currentUserId = securityUtils.getCurrentUserId();
-        Long contractOwnerId = deposit.getRentalContract().getOwnerId();
-        if (!contractOwnerId.equals(currentUserId)) {
-            throw new AccessDeniedException("You do not have permission to access this resource");
-        }
+        houseAccessService.resolveContractHouseId(deposit.getRentalContract().getId());
         return deposit;
     }
 
     private RentalContract getOwnedContract(Long contractId) {
-        Long currentUserId = securityUtils.getCurrentUserId();
-        return contractRepository.findById(contractId)
-                .map(contract -> {
-                    if (!contract.getOwnerId().equals(currentUserId)) {
-                        throw new AccessDeniedException(
-                                "You do not have permission to access this resource");
-                    }
-                    return contract;
-                })
+        RentalContract contract = contractRepository.findById(contractId)
                 .orElseThrow(() -> RentalContractNotFoundException.forId(contractId));
+        houseAccessService.resolveContractHouseId(contractId);
+        return contract;
     }
 
     private ContractDepositResponse mapToResponse(ContractDeposit deposit) {

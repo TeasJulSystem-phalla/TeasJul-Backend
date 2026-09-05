@@ -55,6 +55,16 @@ public class UtilityRateServiceImpl implements UtilityRateService {
     public UtilityRateResponse createRate(CreateUtilityRateRequest request) {
         User owner = getCurrentOwner();
 
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+            List<Long> approvedHouseIds = userHouseAccessRepository.findHouseIdsByUserId(securityUtils.getCurrentUserId());
+            if (!approvedHouseIds.contains(request.houseId())) {
+                throw HouseNotFoundException.forId(request.houseId());
+            }
+            House house = houseRepository.findById(request.houseId())
+                    .orElseThrow(() -> HouseNotFoundException.forId(request.houseId()));
+            owner = house.getOwner();
+        }
+
         validateReferences(request.houseId(), request.utilityTypeId(), owner.getId());
         validateDates(request.effectiveFrom(), request.effectiveTo());
         validateRate(request.rate());
@@ -73,14 +83,24 @@ public class UtilityRateServiceImpl implements UtilityRateService {
     public PageResponse<UtilityRateResponse> getRates(Long houseId, Long utilityTypeId,
             UtilityRateStatus status, LocalDate effectiveFrom, LocalDate effectiveTo,
             Pageable pageable) {
-        Long ownerId = getCurrentOwner().getId();
-        List<Long> scopedHouseIds = securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)
-                ? resolveApprovedHouseIds(houseId)
-                : null;
+        Long currentOwnerId = getCurrentOwner().getId();
+        List<Long> scopedOwnerIds;
+        final List<Long> scopedHouseIds;
+
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+            scopedOwnerIds = new ArrayList<>(userHouseAccessRepository.findOwnerIdsByUserId(securityUtils.getCurrentUserId()));
+            if (!scopedOwnerIds.contains(currentOwnerId)) {
+                scopedOwnerIds.add(currentOwnerId);
+            }
+            scopedHouseIds = resolveApprovedHouseIds(houseId);
+        } else {
+            scopedOwnerIds = List.of(currentOwnerId);
+            scopedHouseIds = null;
+        }
 
         Specification<UtilityRate> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
-            predicates.add(cb.equal(root.get("owner").get("id"), ownerId));
+            predicates.add(root.get("owner").get("id").in(scopedOwnerIds));
             if (scopedHouseIds != null) {
                 predicates.add(root.get("houseId").in(scopedHouseIds));
             } else if (houseId != null) {
@@ -177,11 +197,23 @@ public class UtilityRateServiceImpl implements UtilityRateService {
     }
 
     private void validateReferences(Long houseId, Long utilityTypeId, Long ownerId) {
-        houseRepository.findByIdAndOwnerId(houseId, ownerId)
-                .orElseThrow(() -> HouseNotFoundException.forId(houseId));
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+            List<Long> approvedHouseIds = userHouseAccessRepository.findHouseIdsByUserId(securityUtils.getCurrentUserId());
+            if (!approvedHouseIds.contains(houseId)) {
+                throw HouseNotFoundException.forId(houseId);
+            }
+            House house = houseRepository.findById(houseId)
+                    .orElseThrow(() -> HouseNotFoundException.forId(houseId));
+            Long houseOwnerId = house.getOwner().getId();
+            typeRepository.findByIdAndOwnerId(utilityTypeId, houseOwnerId)
+                    .orElseThrow(() -> UtilityTypeNotFoundException.forId(utilityTypeId));
+        } else {
+            houseRepository.findByIdAndOwnerId(houseId, ownerId)
+                    .orElseThrow(() -> HouseNotFoundException.forId(houseId));
 
-        typeRepository.findByIdAndOwnerId(utilityTypeId, ownerId)
-                .orElseThrow(() -> UtilityTypeNotFoundException.forId(utilityTypeId));
+            typeRepository.findByIdAndOwnerId(utilityTypeId, ownerId)
+                    .orElseThrow(() -> UtilityTypeNotFoundException.forId(utilityTypeId));
+        }
     }
 
     private void validateDates(LocalDate effectiveFrom, LocalDate effectiveTo) {
@@ -198,9 +230,23 @@ public class UtilityRateServiceImpl implements UtilityRateService {
     }
 
     private UtilityRate getOwnedRate(Long id) {
-        Long currentUserId = getCurrentOwner().getId();
-        return rateRepository.findByIdAndOwnerId(id, currentUserId)
+        Long currentUserId = securityUtils.getCurrentUserId();
+        UtilityRate rate = rateRepository.findById(id)
                 .orElseThrow(() -> UtilityRateNotFoundException.forId(id));
+
+        Long rateOwnerId = rate.getOwner().getId();
+        if (rateOwnerId.equals(getCurrentOwner().getId())) {
+            return rate;
+        }
+
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+            List<Long> approvedHouseIds = userHouseAccessRepository.findHouseIdsByUserId(currentUserId);
+            if (approvedHouseIds.contains(rate.getHouseId())) {
+                return rate;
+            }
+        }
+
+        throw UtilityRateNotFoundException.forId(id);
     }
 
     private List<Long> resolveApprovedHouseIds(Long requestedHouseId) {

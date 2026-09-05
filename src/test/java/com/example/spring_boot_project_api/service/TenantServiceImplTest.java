@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.AfterEach;
@@ -27,6 +28,8 @@ import com.example.spring_boot_project_api.dto.response.TenantResponse;
 import com.example.spring_boot_project_api.exception.DuplicateResourceException;
 import com.example.spring_boot_project_api.exception.UserNotFoundException;
 import com.example.spring_boot_project_api.mapper.TenantMapper;
+import com.example.spring_boot_project_api.model.House;
+import com.example.spring_boot_project_api.model.HouseStatus;
 import com.example.spring_boot_project_api.model.Tenant;
 import com.example.spring_boot_project_api.model.TenantStatus;
 import com.example.spring_boot_project_api.model.User;
@@ -36,6 +39,7 @@ import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.impl.TenantServiceImpl;
 import com.example.spring_boot_project_api.util.SecurityUtils;
+import org.springframework.data.domain.PageImpl;
 
 @ExtendWith(MockitoExtension.class)
 class TenantServiceImplTest {
@@ -50,6 +54,8 @@ class TenantServiceImplTest {
     private TenantMapper tenantMapper = new TenantMapper();
     @Mock
     private SecurityUtils securityUtils;
+    @Mock
+    private HouseAccessService houseAccessService;
 
     @InjectMocks
     private TenantServiceImpl tenantService;
@@ -211,5 +217,87 @@ class TenantServiceImplTest {
 
         assertThat(response.userId()).isNull();
         assertThat(response.id()).isEqualTo(7L);
+    }
+
+    @Test
+    void getMyTenantsReturnsOnlyTenantsInvitedByCurrentManager() {
+        User managerA = User.builder().id(2L).username("managerA").email("managerA@example.com")
+                .passwordHash("h").firstName("Manager").lastName("A").status(UserStatus.ACTIVE)
+                .createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now()).build();
+        House house = House.builder().id(10L).owner(owner).name("Golden House")
+                .slug("golden-house").code("GH-1").address("PP").status(HouseStatus.ACTIVE).build();
+
+        Tenant tenantA = withOwner(owner, null);
+        tenantA.setId(7L);
+        tenantA.setHouse(house);
+        tenantA.setInvitedBy(managerA);
+        tenantA.setStatus(TenantStatus.PENDING);
+
+        when(securityUtils.getCurrentUserId()).thenReturn(managerA.getId());
+        when(securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)).thenReturn(true);
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(false);
+        when(houseAccessService.getAccessibleHouseIds()).thenReturn(List.of(10L));
+        when(tenantRepository.findAllByHouseIdsOrderByCreatedAtDesc(List.of(10L)))
+                .thenReturn(List.of(tenantA));
+
+        List<TenantResponse> responses = tenantService.getMyTenants();
+
+        assertThat(responses).hasSize(1);
+        assertThat(responses.get(0).id()).isEqualTo(7L);
+        assertThat(responses.get(0).invitedById()).isEqualTo(managerA.getId());
+    }
+
+    @Test
+    void getMyTenantsReturnsAllTenantsForOwner() {
+        authAs(owner);
+        Tenant tenantA = withOwner(owner, null);
+        tenantA.setId(7L);
+        Tenant tenantB = withOwner(owner, null);
+        tenantB.setId(8L);
+
+        when(securityUtils.getCurrentUserId()).thenReturn(owner.getId());
+        when(securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)).thenReturn(false);
+        when(tenantRepository.findAllByOwnerIdOrderByCreatedAtDesc(owner.getId()))
+                .thenReturn(List.of(tenantA, tenantB));
+
+        List<TenantResponse> responses = tenantService.getMyTenants();
+
+        assertThat(responses).hasSize(2);
+        assertThat(responses).extracting(TenantResponse::id).containsExactly(7L, 8L);
+    }
+
+    @Test
+    void getTenantByIdAllowsManagerWithHouseAccess() {
+        User managerA = User.builder().id(2L).build();
+        House house = House.builder().id(10L).owner(owner).name("Golden House")
+                .slug("golden-house").code("GH-1").address("PP").status(HouseStatus.ACTIVE).build();
+        Tenant tenant = withOwner(owner, null);
+        tenant.setId(7L);
+        tenant.setHouse(house);
+
+        when(securityUtils.getCurrentUserId()).thenReturn(managerA.getId());
+        when(tenantRepository.findById(7L)).thenReturn(Optional.of(tenant));
+        when(houseAccessService.canAccessHouse(10L)).thenReturn(true);
+
+        TenantResponse response = tenantService.getTenantById(7L);
+        assertThat(response.id()).isEqualTo(7L);
+    }
+
+    @Test
+    void getTenantByIdDisallowsOtherManager() {
+        User managerB = User.builder().id(3L).build();
+        House house = House.builder().id(10L).owner(owner).name("Golden House")
+                .slug("golden-house").code("GH-1").address("PP").status(HouseStatus.ACTIVE).build();
+        Tenant tenant = withOwner(owner, null);
+        tenant.setId(7L);
+        tenant.setHouse(house);
+
+        when(securityUtils.getCurrentUserId()).thenReturn(managerB.getId());
+        when(tenantRepository.findById(7L)).thenReturn(Optional.of(tenant));
+        when(houseAccessService.canAccessHouse(10L)).thenReturn(false);
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                com.example.spring_boot_project_api.exception.TenantNotFoundException.class,
+                () -> tenantService.getTenantById(7L));
     }
 }

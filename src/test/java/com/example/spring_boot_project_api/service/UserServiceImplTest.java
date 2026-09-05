@@ -36,12 +36,16 @@ import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.model.UserStatus;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.impl.UserServiceImpl;
+import com.example.spring_boot_project_api.util.SecurityUtils;
 
 @ExtendWith(MockitoExtension.class)
 class UserServiceImplTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private SecurityUtils securityUtils;
 
     @Spy
     private UserMapper userMapper = new UserMapper();
@@ -80,6 +84,7 @@ class UserServiceImplTest {
     @Test
     void getUserByIdShouldReturnUser() {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
+        when(securityUtils.getCurrentUserId()).thenReturn(1L);
 
         UserResponse response = userService.getUserById(1L);
 
@@ -90,6 +95,7 @@ class UserServiceImplTest {
     @Test
     void getUserByIdShouldThrowWhenMissing() {
         when(userRepository.findById(99L)).thenReturn(Optional.empty());
+        when(securityUtils.getCurrentUserId()).thenReturn(99L);
 
         assertThatThrownBy(() -> userService.getUserById(99L))
                 .isInstanceOf(UserNotFoundException.class)
@@ -110,6 +116,7 @@ class UserServiceImplTest {
     @Test
     void getAllUsersShouldReturnAllUsers() {
         when(userRepository.findAll()).thenReturn(List.of(user()));
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(true);
 
         List<UserResponse> users = userService.getAllUsers();
 
@@ -122,6 +129,7 @@ class UserServiceImplTest {
         User existing = user();
         when(userRepository.findById(1L)).thenReturn(Optional.of(existing));
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(securityUtils.getCurrentUserId()).thenReturn(1L);
 
         UpdateUserRequest request = new UpdateUserRequest("Johnny", null, "+9876543210", null);
 
@@ -136,6 +144,7 @@ class UserServiceImplTest {
     void deleteUserShouldRemoveUser() {
         User existing = user();
         when(userRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(true);
 
         userService.deleteUser(1L);
 

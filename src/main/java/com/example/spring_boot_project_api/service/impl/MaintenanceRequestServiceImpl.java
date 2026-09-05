@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.example.spring_boot_project_api.dto.request.ChangeMaintenanceRequestStatusRequest;
 import com.example.spring_boot_project_api.dto.request.CreateMaintenanceRequestRequest;
+import com.example.spring_boot_project_api.dto.request.CreateTenantMaintenanceRequestRequest;
 import com.example.spring_boot_project_api.dto.request.UpdateMaintenanceRequestRequest;
 import com.example.spring_boot_project_api.dto.response.MaintenanceRequestResponse;
 import com.example.spring_boot_project_api.exception.HouseNotFoundException;
@@ -28,6 +29,7 @@ import com.example.spring_boot_project_api.model.MaintenanceCategory;
 import com.example.spring_boot_project_api.model.MaintenanceRequest;
 import com.example.spring_boot_project_api.model.MaintenanceRequestPriority;
 import com.example.spring_boot_project_api.model.MaintenanceRequestStatus;
+import com.example.spring_boot_project_api.model.RentalContract;
 import com.example.spring_boot_project_api.model.Room;
 import com.example.spring_boot_project_api.model.Tenant;
 import com.example.spring_boot_project_api.model.User;
@@ -37,7 +39,9 @@ import com.example.spring_boot_project_api.repository.MaintenanceRequestReposito
 import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.TenantRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
+import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.service.MaintenanceRequestService;
+import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
 
@@ -65,6 +69,9 @@ public class MaintenanceRequestServiceImpl implements MaintenanceRequestService 
     private final TenantRepository tenantRepository;
     private final MaintenanceCategoryRepository categoryRepository;
     private final MaintenanceRequestMapper requestMapper;
+    private final TenantContextResolver tenantContextResolver;
+    private final HouseAccessService houseAccessService;
+    private final SecurityUtils securityUtils;
 
     @Override
     @Transactional
@@ -95,9 +102,59 @@ public class MaintenanceRequestServiceImpl implements MaintenanceRequestService 
     @Transactional(readOnly = true)
     public List<MaintenanceRequestResponse> getMyRequests() {
         User owner = getCurrentOwner();
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)
+                && !securityUtils.hasRole(SecurityUtils.ROLE_OWNER)) {
+            List<Long> houseIds = houseAccessService.getAccessibleHouseIds();
+            if (houseIds.isEmpty()) {
+                return List.of();
+            }
+            return requestRepository.findAllByHouseIdInOrderByCreatedAtDesc(houseIds).stream()
+                    .map(requestMapper::toResponse)
+                    .toList();
+        }
         return requestRepository.findAllByOwnerIdOrderByCreatedAtDesc(owner.getId()).stream()
                 .map(requestMapper::toResponse)
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<MaintenanceRequestResponse> getMyRequestsAsTenant() {
+        Tenant tenant = getMyTenant();
+        return requestRepository.findAllByTenantIdOrderByCreatedAtDesc(tenant.getId()).stream()
+                .map(requestMapper::toResponse)
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public MaintenanceRequestResponse createMyRequest(CreateTenantMaintenanceRequestRequest request) {
+        Tenant tenant = getMyTenant();
+        RentalContract contract = tenantContextResolver.activeContractOf(tenant.getId());
+        if (contract == null) {
+            throw new InvalidMaintenanceOperationException(
+                    "You do not have an active rental contract yet.");
+        }
+
+        Room room = roomRepository.findById(contract.getRoomId())
+                .orElseThrow(() -> RoomNotFoundException.forId(contract.getRoomId()));
+        House house = houseRepository.findById(room.getHouseId())
+                .orElseThrow(() -> HouseNotFoundException.forId(room.getHouseId()));
+        User owner = house.getOwner();
+
+        MaintenanceRequest maintenanceRequest = MaintenanceRequest.builder()
+                .title(request.title())
+                .description(request.description())
+                .priority(request.priority() != null ? request.priority() : MaintenanceRequestPriority.MEDIUM)
+                .build();
+        maintenanceRequest.setOwner(owner);
+        maintenanceRequest.setHouse(house);
+        maintenanceRequest.setRoom(room);
+        maintenanceRequest.setTenant(tenant);
+        maintenanceRequest.setStatus(MaintenanceRequestStatus.PENDING);
+        maintenanceRequest.setRequestNo(generateRequestNo(owner.getId()));
+
+        return requestMapper.toResponse(requestRepository.save(maintenanceRequest));
     }
 
     @Override
@@ -144,15 +201,32 @@ public class MaintenanceRequestServiceImpl implements MaintenanceRequestService 
     }
 
     private MaintenanceRequest getOwnedRequest(Long id) {
-        Long currentUserId = getCurrentOwner().getId();
-
-        return requestRepository.findByIdAndOwnerId(id, currentUserId)
+        MaintenanceRequest req = requestRepository.findById(id)
                 .orElseThrow(() -> MaintenanceRequestNotFoundException.forId(id));
+        Long ownerId = req.getOwner().getId();
+        Long currentUserId = securityUtils.getCurrentUserId();
+
+        if (ownerId.equals(currentUserId)) {
+            return req;
+        }
+
+        if (houseAccessService.canAccessHouse(req.getHouse().getId())) {
+            return req;
+        }
+
+        throw MaintenanceRequestNotFoundException.forId(id);
+    }
+
+    private Tenant getMyTenant() {
+        User me = getCurrentOwner();
+        return tenantContextResolver.requireLinkedTenant(me.getId());
     }
 
     private House getOwnedHouse(Long houseId, Long ownerId) {
-        return houseRepository.findByIdAndOwnerId(houseId, ownerId)
+        House house = houseRepository.findById(houseId)
                 .orElseThrow(() -> HouseNotFoundException.forId(houseId));
+        houseAccessService.requireHouseAccess(houseId);
+        return house;
     }
 
     private Room getRoomInHouse(Long roomId, House house) {
@@ -174,8 +248,15 @@ public class MaintenanceRequestServiceImpl implements MaintenanceRequestService 
         if (tenantId == null) {
             return null;
         }
-        return tenantRepository.findByIdAndOwnerId(tenantId, ownerId)
+        Tenant tenant = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> TenantNotFoundException.forId(tenantId));
+        if (tenant.getOwner().getId().equals(ownerId)) {
+            return tenant;
+        }
+        if (tenant.getHouse() != null && houseAccessService.canAccessHouse(tenant.getHouse().getId())) {
+            return tenant;
+        }
+        throw TenantNotFoundException.forId(tenantId);
     }
 
     private MaintenanceCategory getOwnedCategoryOrNull(Long categoryId, Long ownerId) {

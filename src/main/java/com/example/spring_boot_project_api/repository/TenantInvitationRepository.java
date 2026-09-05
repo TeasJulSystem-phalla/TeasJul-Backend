@@ -19,6 +19,17 @@ public interface TenantInvitationRepository extends JpaRepository<TenantInvitati
 
     List<TenantInvitation> findAllByManagerIdOrderByCreatedAtDesc(Long managerId);
 
+    /**
+     * Invitations for houses the user owns or has been granted access to. Used to
+     * scope visible invitations by house (rather than by the invitation's creator)
+     * so that an owner sees all invitations and a manager sees only the invitations
+     * for houses they manage — managers remain isolated from each other's houses.
+     */
+    @Query("SELECT i FROM TenantInvitation i WHERE i.house.owner.id = :userId " +
+            "OR (i.manager.id = :userId AND EXISTS (SELECT 1 FROM UserHouseAccess a WHERE a.house = i.house AND a.user.id = :userId)) " +
+            "ORDER BY i.createdAt DESC")
+    List<TenantInvitation> findAllVisibleByUserIdOrderByCreatedAtDesc(@Param("userId") Long userId);
+
     Optional<TenantInvitation> findByIdAndManagerId(Long id, Long managerId);
 
     /**

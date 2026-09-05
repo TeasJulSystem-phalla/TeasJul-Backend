@@ -102,8 +102,17 @@ public class MaintenanceCategoryServiceImpl implements MaintenanceCategoryServic
     private MaintenanceCategory getOwnedCategory(Long id) {
         Long currentUserId = getCurrentOwner().getId();
 
-        return categoryRepository.findByIdAndOwnerId(id, currentUserId)
+        MaintenanceCategory category = categoryRepository.findById(id)
                 .orElseThrow(() -> MaintenanceCategoryNotFoundException.forId(id));
+        Long categoryOwnerId = category.getOwner().getId();
+        if (categoryOwnerId.equals(currentUserId)) {
+            return category;
+        }
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)
+                && userHouseAccessRepository.findOwnerIdsByUserId(currentUserId).contains(categoryOwnerId)) {
+            return category;
+        }
+        throw MaintenanceCategoryNotFoundException.forId(id);
     }
 
     private void validateUniqueFields(Long ownerId, String name, String code, Long categoryId) {

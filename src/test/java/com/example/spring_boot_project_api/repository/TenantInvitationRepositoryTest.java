@@ -17,6 +17,8 @@ import com.example.spring_boot_project_api.model.HouseStatus;
 import com.example.spring_boot_project_api.model.TenantInvitation;
 import com.example.spring_boot_project_api.model.TenantInvitationStatus;
 import com.example.spring_boot_project_api.model.User;
+import com.example.spring_boot_project_api.model.UserHouseAccess;
+import com.example.spring_boot_project_api.model.UserHouseAccessId;
 import com.example.spring_boot_project_api.model.UserStatus;
 import com.example.spring_boot_project_api.util.InvitationTokenUtil;
 
@@ -148,5 +150,53 @@ class TenantInvitationRepositoryTest {
                 .extracting(TenantInvitation::getId)
                 .contains(older.getId())
                 .doesNotContain(newer.getId());
+    }
+
+    @Test
+    void findAllVisibleScopesByHouseOwnerOrHouseAccessIsolatingManagers() {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        User owner = persistUser("owner_" + suffix);
+        User managerA = persistUser("managerA_" + suffix);
+        User managerB = persistUser("managerB_" + suffix);
+        House houseA = persistHouse(owner, "AAA House");
+        House houseB = persistHouse(owner, "BB House");
+
+        TenantInvitation inviteA = persistInvitation(managerA, houseA,
+                "invite_a_" + suffix + "@example.com", TenantInvitationStatus.PENDING,
+                LocalDateTime.now().plusMinutes(5));
+        TenantInvitation inviteB = persistInvitation(managerB, houseB,
+                "invite_b_" + suffix + "@example.com", TenantInvitationStatus.PENDING,
+                LocalDateTime.now().plusMinutes(5));
+
+        // managerA has access only to houseA; managerB only to houseB.
+        persistHouseAccess(managerA, houseA);
+        persistHouseAccess(managerB, houseB);
+        entityManager.getEntityManager().clear();
+
+        assertThat(tenantInvitationRepository
+                .findAllVisibleByUserIdOrderByCreatedAtDesc(owner.getId()))
+                .extracting(TenantInvitation::getId)
+                .contains(inviteA.getId(), inviteB.getId());
+
+        assertThat(tenantInvitationRepository
+                .findAllVisibleByUserIdOrderByCreatedAtDesc(managerA.getId()))
+                .extracting(TenantInvitation::getId)
+                .contains(inviteA.getId())
+                .doesNotContain(inviteB.getId());
+
+        assertThat(tenantInvitationRepository
+                .findAllVisibleByUserIdOrderByCreatedAtDesc(managerB.getId()))
+                .extracting(TenantInvitation::getId)
+                .contains(inviteB.getId())
+                .doesNotContain(inviteA.getId());
+    }
+
+    private UserHouseAccess persistHouseAccess(User user, House house) {
+        UserHouseAccess access = UserHouseAccess.builder()
+                .id(new UserHouseAccessId(user.getId(), house.getId()))
+                .user(user)
+                .house(house)
+                .build();
+        return entityManager.persistFlushFind(access);
     }
 }

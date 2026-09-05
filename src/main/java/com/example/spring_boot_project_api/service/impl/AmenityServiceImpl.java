@@ -124,7 +124,8 @@ public class AmenityServiceImpl implements AmenityService {
 
         return amenityRepository.findById(id)
                 .map(amenity -> {
-                    if (!amenity.getOwnerId().equals(currentUserId)) {
+                    if (!amenity.getOwnerId().equals(currentUserId)
+                            && !resolveScopedOwnerIds().contains(amenity.getOwnerId())) {
                         throw new AccessDeniedException(
                                 "You do not have permission to access this resource");
                     }

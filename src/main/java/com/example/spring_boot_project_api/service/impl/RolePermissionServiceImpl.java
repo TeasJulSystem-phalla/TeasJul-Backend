@@ -7,6 +7,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +26,7 @@ import com.example.spring_boot_project_api.repository.PermissionRepository;
 import com.example.spring_boot_project_api.repository.RolePermissionRepository;
 import com.example.spring_boot_project_api.repository.RoleRepository;
 import com.example.spring_boot_project_api.service.RolePermissionService;
+import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
 
@@ -36,6 +38,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
     private final RoleRepository roleRepository;
     private final PermissionRepository permissionRepository;
     private final PermissionMapper permissionMapper;
+    private final SecurityUtils securityUtils;
 
     @Override
     @Transactional(readOnly = true)
@@ -50,6 +53,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
     @Override
     @Transactional
     public PermissionResponse assignPermissionToRole(Long roleId, Long permissionId) {
+        requireOwner();
         Role role = getRoleOrThrow(roleId);
         Permission permission = getPermissionOrThrow(permissionId);
 
@@ -71,6 +75,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
     @Override
     @Transactional
     public void removePermissionFromRole(Long roleId, Long permissionId) {
+        requireOwner();
         getRoleOrThrow(roleId);
 
         if (!rolePermissionRepository.existsByRoleIdAndPermissionId(roleId, permissionId)) {
@@ -84,6 +89,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
     @Transactional
     public List<PermissionResponse> replaceRolePermissions(Long roleId,
             ReplaceRolePermissionsRequest request) {
+        requireOwner();
         Role role = getRoleOrThrow(roleId);
 
         Set<Long> permissionIds = new LinkedHashSet<>(request.permissionIds());
@@ -113,6 +119,12 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         return assignments.stream()
                 .map(assignment -> permissionMapper.toResponse(assignment.getPermission()))
                 .toList();
+    }
+
+    private void requireOwner() {
+        if (!securityUtils.hasRole(SecurityUtils.ROLE_OWNER)) {
+            throw new AccessDeniedException("You do not have permission to access this resource");
+        }
     }
 
     private Role getRoleOrThrow(Long roleId) {

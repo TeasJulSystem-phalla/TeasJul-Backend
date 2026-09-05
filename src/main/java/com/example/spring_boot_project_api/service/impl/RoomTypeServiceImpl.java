@@ -103,12 +103,24 @@ public class RoomTypeServiceImpl implements RoomTypeService {
         Long currentUserId = securityUtils.getCurrentUserId();
         return roomTypeRepository.findById(id)
                 .map(roomType -> {
-                    if (!roomType.getOwnerId().equals(currentUserId)) {
+                    if (!roomType.getOwnerId().equals(currentUserId)
+                            && !resolveScopedOwnerIds().contains(roomType.getOwnerId())) {
                         throw new AccessDeniedException(
                                 "You do not have permission to access this resource");
                     }
                     return roomType;
                 })
                 .orElseThrow(() -> RoomTypeNotFoundException.forId(id));
+    }
+
+    private List<Long> resolveScopedOwnerIds() {
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+            List<Long> ownerIds = userHouseAccessRepository.findOwnerIdsByUserId(securityUtils.getCurrentUserId());
+            if (ownerIds.isEmpty()) {
+                return Collections.emptyList();
+            }
+            return ownerIds;
+        }
+        return List.of(securityUtils.getCurrentUserId());
     }
 }

@@ -57,6 +57,7 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/register", "/api/v1/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/payments/callback").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/tenant-invitations/validate").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/tenant-invitations/consume").permitAll()
                         .requestMatchers(

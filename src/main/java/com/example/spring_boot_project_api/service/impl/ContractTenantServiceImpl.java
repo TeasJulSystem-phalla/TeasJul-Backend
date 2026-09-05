@@ -25,6 +25,7 @@ import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.TenantRepository;
 import com.example.spring_boot_project_api.service.ContractTenantService;
+import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,7 @@ public class ContractTenantServiceImpl implements ContractTenantService {
     private final TenantRepository tenantRepository;
     private final ContractTenantMapper contractTenantMapper;
     private final SecurityUtils securityUtils;
+    private final HouseAccessService houseAccessService;
 
     @Override
     public ContractTenantResponse addTenantToContract(ContractTenantRequest request) {
@@ -47,8 +49,10 @@ public class ContractTenantServiceImpl implements ContractTenantService {
         Tenant tenant = tenantRepository.findByIdAndOwnerId(request.tenantId(), currentUserId)
                 .orElseThrow(() -> TenantNotFoundException.forId(request.tenantId()));
 
-        if (tenant.getStatus() != TenantStatus.ACTIVE) {
-            throw new DuplicateResourceException("Only ACTIVE tenants can be assigned to a contract. Current status: " + tenant.getStatus());
+        if (tenant.getStatus() != TenantStatus.ACTIVE && tenant.getStatus() != TenantStatus.PENDING) {
+            throw new DuplicateResourceException(
+                    "Only ACTIVE or PENDING tenants can be assigned to a contract. Current status: "
+                            + tenant.getStatus());
         }
 
         if (contractTenantRepository.existsByContractIdAndTenantId(request.contractId(), request.tenantId())) {
@@ -157,20 +161,21 @@ public class ContractTenantServiceImpl implements ContractTenantService {
     }
 
     private RentalContract getOwnedContract(Long contractId) {
-        Long currentUserId = securityUtils.getCurrentUserId();
-        return contractRepository.findById(contractId)
-                .map(contract -> {
-                    if (!contract.getOwnerId().equals(currentUserId)) {
-                        throw new AccessDeniedException(
-                                "You do not have permission to access this resource");
-                    }
-                    return contract;
-                })
+        RentalContract contract = contractRepository.findById(contractId)
                 .orElseThrow(() -> RentalContractNotFoundException.forId(contractId));
+        houseAccessService.resolveContractHouseId(contractId);
+        return contract;
     }
 
     private void verifyTenantOwnership(Long tenantId, Long currentUserId) {
-        tenantRepository.findByIdAndOwnerId(tenantId, currentUserId)
+        com.example.spring_boot_project_api.model.Tenant tenant = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> TenantNotFoundException.forId(tenantId));
+        if (tenant.getOwner().getId().equals(currentUserId)) {
+            return;
+        }
+        if (tenant.getHouse() != null && houseAccessService.canAccessHouse(tenant.getHouse().getId())) {
+            return;
+        }
+        throw TenantNotFoundException.forId(tenantId);
     }
 }

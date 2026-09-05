@@ -17,6 +17,7 @@ import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.repository.ContractRenewalRepository;
 import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.service.ContractRenewalService;
+import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,7 @@ public class ContractRenewalServiceImpl implements ContractRenewalService {
     private final RentalContractRepository contractRepository;
     private final ContractRenewalMapper renewalMapper;
     private final SecurityUtils securityUtils;
+    private final HouseAccessService houseAccessService;
 
     @Override
     @Transactional
@@ -57,10 +59,7 @@ public class ContractRenewalServiceImpl implements ContractRenewalService {
     }
 
     private ContractRenewal assertOwnedAndGet(ContractRenewal renewal) {
-        Long currentUserId = securityUtils.getCurrentUserId();
-        if (!renewal.getRentalContract().getOwnerId().equals(currentUserId)) {
-            throw new AccessDeniedException("You do not have permission to access this resource");
-        }
+        houseAccessService.resolveContractHouseId(renewal.getRentalContract().getId());
         return renewal;
     }
 
@@ -71,15 +70,9 @@ public class ContractRenewalServiceImpl implements ContractRenewalService {
     }
 
     private RentalContract getOwnedContract(Long contractId) {
-        Long currentUserId = securityUtils.getCurrentUserId();
-        return contractRepository.findById(contractId)
-                .map(contract -> {
-                    if (!contract.getOwnerId().equals(currentUserId)) {
-                        throw new AccessDeniedException(
-                                "You do not have permission to access this resource");
-                    }
-                    return contract;
-                })
+        RentalContract contract = contractRepository.findById(contractId)
                 .orElseThrow(() -> RentalContractNotFoundException.forId(contractId));
+        houseAccessService.resolveContractHouseId(contractId);
+        return contract;
     }
 }

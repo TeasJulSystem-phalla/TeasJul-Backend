@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.spring_boot_project_api.dto.request.ChangeMaintenanceRequestStatusRequest;
 import com.example.spring_boot_project_api.dto.request.CreateMaintenanceRequestRequest;
+import com.example.spring_boot_project_api.dto.request.CreateTenantMaintenanceRequestRequest;
 import com.example.spring_boot_project_api.dto.request.UpdateMaintenanceRequestRequest;
 import com.example.spring_boot_project_api.dto.response.MaintenanceRequestResponse;
 import com.example.spring_boot_project_api.service.MaintenanceRequestService;
@@ -47,6 +48,23 @@ public class MaintenanceRequestController {
     @GetMapping
     public ResponseEntity<List<MaintenanceRequestResponse>> getMyRequests() {
         return ResponseEntity.ok(requestService.getMyRequests());
+    }
+
+    @Operation(summary = "List my maintenance requests (tenant)",
+            description = "Returns the maintenance requests reported by the tenant profile linked "
+                    + "to the currently authenticated user.")
+    @GetMapping("/my")
+    public ResponseEntity<List<MaintenanceRequestResponse>> getMyRequestsAsTenant() {
+        return ResponseEntity.ok(requestService.getMyRequestsAsTenant());
+    }
+
+    @Operation(summary = "Create a maintenance request (tenant)",
+            description = "Creates a maintenance request for the room of the current tenant's active rental contract. "
+                    + "Owner, house and room are resolved from the tenant's contract.")
+    @PostMapping("/my")
+    public ResponseEntity<MaintenanceRequestResponse> createMyRequest(
+            @Valid @RequestBody CreateTenantMaintenanceRequestRequest request) {
+        return ResponseEntity.ok(requestService.createMyRequest(request));
     }
 
     @Operation(summary = "Get a maintenance request by id",

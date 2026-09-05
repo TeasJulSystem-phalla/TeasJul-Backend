@@ -1,5 +1,7 @@
 package com.example.spring_boot_project_api.repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -13,6 +15,8 @@ public interface UtilityTypeRepository
         extends JpaRepository<UtilityType, Long>, JpaSpecificationExecutor<UtilityType> {
 
     Optional<UtilityType> findByIdAndOwnerId(Long id, Long ownerId);
+
+    List<UtilityType> findByOwnerIdIn(Collection<Long> ownerIds);
 
     boolean existsByOwnerIdAndName(Long ownerId, String name);
 

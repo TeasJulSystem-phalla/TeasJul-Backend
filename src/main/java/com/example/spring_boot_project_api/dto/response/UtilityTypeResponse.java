@@ -10,6 +10,7 @@ public record UtilityTypeResponse(
         String name,
         String code,
         String unit,
+        com.example.spring_boot_project_api.enums.UtilityBillingMethod billingMethod,
         UtilityTypeStatus status,
         LocalDateTime createdAt,
         LocalDateTime updatedAt

@@ -27,12 +27,16 @@ import com.example.spring_boot_project_api.model.House;
 import com.example.spring_boot_project_api.model.Room;
 import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.model.UtilityMeter;
+import com.example.spring_boot_project_api.model.UtilityType;
 import com.example.spring_boot_project_api.repository.HouseRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
+import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.repository.UtilityMeterRepository;
 import com.example.spring_boot_project_api.repository.UtilityTypeRepository;
+import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.service.UtilityMeterService;
+import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
@@ -46,14 +50,29 @@ public class UtilityMeterServiceImpl implements UtilityMeterService {
     private final RoomRepository roomRepository;
     private final UtilityTypeRepository typeRepository;
     private final UserRepository userRepository;
+    private final UserHouseAccessRepository userHouseAccessRepository;
     private final UtilityMeterMapper meterMapper;
+    private final SecurityUtils securityUtils;
+    private final HouseAccessService houseAccessService;
 
     @Override
     @Transactional
     public UtilityMeterResponse createMeter(CreateUtilityMeterRequest request) {
         User owner = getCurrentOwner();
 
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+            List<Long> approvedHouseIds = userHouseAccessRepository.findHouseIdsByUserId(securityUtils.getCurrentUserId());
+            if (!approvedHouseIds.contains(request.houseId())) {
+                throw HouseNotFoundException.forId(request.houseId());
+            }
+            House house = houseRepository.findById(request.houseId())
+                    .orElseThrow(() -> HouseNotFoundException.forId(request.houseId()));
+            owner = house.getOwner();
+        }
+
         validateReferences(request.houseId(), request.roomId(), request.utilityTypeId(), owner.getId());
+
+        assertNoActiveMeterForRoomType(request.roomId(), request.utilityTypeId(), null);
 
         if (meterRepository.existsByMeterNumber(request.meterNumber())) {
             throw new DuplicateResourceException(
@@ -70,11 +89,11 @@ public class UtilityMeterServiceImpl implements UtilityMeterService {
     @Transactional(readOnly = true)
     public PageResponse<UtilityMeterResponse> getMeters(String search, Long houseId, Long roomId,
             Long utilityTypeId, UtilityMeterStatus status, Pageable pageable) {
-        Long ownerId = getCurrentOwner().getId();
+        List<Long> accessibleHouseIds = houseAccessService.getAccessibleHouseIds();
 
         Specification<UtilityMeter> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
-            predicates.add(cb.equal(root.get("owner").get("id"), ownerId));
+            predicates.add(root.get("houseId").in(accessibleHouseIds));
             if (houseId != null) {
                 predicates.add(cb.equal(root.get("houseId"), houseId));
             }
@@ -122,6 +141,8 @@ public class UtilityMeterServiceImpl implements UtilityMeterService {
             throw new DuplicateResourceException("Meter number already exists: " + effectiveMeterNumber);
         }
 
+        assertNoActiveMeterForRoomType(effectiveRoomId, effectiveUtilityTypeId, meter.getId());
+
         meter.setHouseId(effectiveHouseId);
         meter.setRoomId(effectiveRoomId);
         meter.setUtilityTypeId(effectiveUtilityTypeId);
@@ -145,17 +166,36 @@ public class UtilityMeterServiceImpl implements UtilityMeterService {
     }
 
     private void validateReferences(Long houseId, Long roomId, Long utilityTypeId, Long ownerId) {
-        House house = houseRepository.findByIdAndOwnerId(houseId, ownerId)
-                .orElseThrow(() -> HouseNotFoundException.forId(houseId));
+        House house;
+        Long resolvedOwnerId;
 
-        typeRepository.findByIdAndOwnerId(utilityTypeId, ownerId)
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+            List<Long> approvedHouseIds = userHouseAccessRepository.findHouseIdsByUserId(securityUtils.getCurrentUserId());
+            if (!approvedHouseIds.contains(houseId)) {
+                throw HouseNotFoundException.forId(houseId);
+            }
+            house = houseRepository.findById(houseId)
+                    .orElseThrow(() -> HouseNotFoundException.forId(houseId));
+            resolvedOwnerId = house.getOwner().getId();
+        } else {
+            house = houseRepository.findByIdAndOwnerId(houseId, ownerId)
+                    .orElseThrow(() -> HouseNotFoundException.forId(houseId));
+            resolvedOwnerId = ownerId;
+        }
+
+        UtilityType type = typeRepository.findByIdAndOwnerId(utilityTypeId, resolvedOwnerId)
                 .orElseThrow(() -> UtilityTypeNotFoundException.forId(utilityTypeId));
+        if (type.getBillingMethod() != com.example.spring_boot_project_api.enums.UtilityBillingMethod.METERED) {
+            throw new InvalidUtilityOperationException(
+                    "A meter can only be created for a METERED utility type "
+                            + "(type " + type.getCode() + " is FIXED)");
+        }
 
         if (roomId != null) {
             Room room = roomRepository.findById(roomId)
                     .orElseThrow(() -> new InvalidUtilityOperationException(
                             "Room not found with id: " + roomId));
-            if (!room.getOwnerId().equals(ownerId)) {
+            if (!room.getOwnerId().equals(resolvedOwnerId)) {
                 throw new InvalidUtilityOperationException(
                         "Room " + roomId + " does not belong to this owner");
             }
@@ -167,9 +207,35 @@ public class UtilityMeterServiceImpl implements UtilityMeterService {
     }
 
     private UtilityMeter getOwnedMeter(Long id) {
-        Long currentUserId = getCurrentOwner().getId();
-        return meterRepository.findByIdAndOwnerId(id, currentUserId)
+        Long currentUserId = securityUtils.getCurrentUserId();
+        UtilityMeter meter = meterRepository.findById(id)
                 .orElseThrow(() -> UtilityMeterNotFoundException.forId(id));
+
+        Long meterOwnerId = meter.getOwner().getId();
+        if (meterOwnerId.equals(getCurrentOwner().getId())) {
+            return meter;
+        }
+
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+            List<Long> approvedHouseIds = userHouseAccessRepository.findHouseIdsByUserId(currentUserId);
+            if (approvedHouseIds.contains(meter.getHouseId())) {
+                return meter;
+            }
+        }
+
+        throw UtilityMeterNotFoundException.forId(id);
+    }
+
+    private void assertNoActiveMeterForRoomType(Long roomId, Long utilityTypeId, Long excludeId) {
+        if (roomId == null || utilityTypeId == null) return;
+        List<UtilityMeter> existing = meterRepository.findByRoomIdAndUtilityTypeId(roomId, utilityTypeId);
+        for (UtilityMeter m : existing) {
+            if (m.getId().equals(excludeId)) continue;
+            if (m.getStatus() == UtilityMeterStatus.ACTIVE) {
+                throw new DuplicateResourceException(
+                        "This room already has an active meter of this utility type");
+            }
+        }
     }
 
     private PageResponse<UtilityMeterResponse> toPageResponse(Page<UtilityMeter> page) {

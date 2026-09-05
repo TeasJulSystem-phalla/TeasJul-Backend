@@ -15,6 +15,7 @@ import com.example.spring_boot_project_api.mapper.RoleMapper;
 import com.example.spring_boot_project_api.model.Role;
 import com.example.spring_boot_project_api.repository.RoleRepository;
 import com.example.spring_boot_project_api.service.RoleService;
+import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
 
@@ -24,10 +25,12 @@ public class RoleServiceImpl implements RoleService {
 
     private final RoleRepository roleRepository;
     private final RoleMapper roleMapper;
+    private final SecurityUtils securityUtils;
 
     @Override
     @Transactional
     public RoleResponse createRole(CreateRoleRequest request) {
+        requireOwner();
         if (roleRepository.existsByCode(request.code())) {
             throw new DuplicateResourceException("Role code already exists: " + request.code());
         }
@@ -55,6 +58,7 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional
     public RoleResponse updateRole(Long id, UpdateRoleRequest request) {
+        requireOwner();
         Role role = getEntityById(id);
 
         if (request.code() != null && roleRepository.existsByCodeAndIdNot(request.code(), id)) {
@@ -80,6 +84,7 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional
     public void deleteRole(Long id) {
+        requireOwner();
         Role role = getEntityById(id);
 
         if (Boolean.TRUE.equals(role.getIsSystemRole())) {
@@ -87,6 +92,12 @@ public class RoleServiceImpl implements RoleService {
         }
 
         roleRepository.delete(role);
+    }
+
+    private void requireOwner() {
+        if (!securityUtils.hasRole(SecurityUtils.ROLE_OWNER)) {
+            throw new AccessDeniedException("You do not have permission to access this resource");
+        }
     }
 
     private Role getEntityById(Long id) {

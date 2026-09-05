@@ -2,6 +2,7 @@ package com.example.spring_boot_project_api.service.impl;
 
 import java.util.List;
 
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,6 +37,10 @@ public class UserRoleServiceImpl implements UserRoleService {
     @Override
     @Transactional(readOnly = true)
     public List<RoleResponse> getUserRoles(Long userId) {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        if (!userId.equals(currentUserId)) {
+            requireOwner();
+        }
         getUserOrThrow(userId);
 
         return userRoleRepository.findByUserId(userId).stream()
@@ -54,6 +59,7 @@ public class UserRoleServiceImpl implements UserRoleService {
     @Override
     @Transactional
     public RoleResponse assignRoleToUser(Long userId, Long roleId) {
+        requireOwner();
         User user = getUserOrThrow(userId);
         Role role = getRoleOrThrow(roleId);
 
@@ -74,6 +80,7 @@ public class UserRoleServiceImpl implements UserRoleService {
     @Override
     @Transactional
     public void removeRoleFromUser(Long userId, Long roleId) {
+        requireOwner();
         getUserOrThrow(userId);
 
         if (!userRoleRepository.existsByUserIdAndRoleId(userId, roleId)) {
@@ -81,6 +88,12 @@ public class UserRoleServiceImpl implements UserRoleService {
         }
 
         userRoleRepository.deleteByUserIdAndRoleId(userId, roleId);
+    }
+
+    private void requireOwner() {
+        if (!securityUtils.hasRole(SecurityUtils.ROLE_OWNER)) {
+            throw new AccessDeniedException("You do not have permission to access this resource");
+        }
     }
 
     private User getUserOrThrow(Long userId) {

@@ -507,7 +507,7 @@ class TenantInvitationServiceImplTest {
         TenantInvitation pending = invitation(5L, manager, house, "vannak@example.com",
                 TenantInvitationStatus.PENDING, LocalDateTime.now().plusMinutes(5));
         when(securityUtils.getCurrentUserId()).thenReturn(1L);
-        when(tenantInvitationRepository.findAllByManagerIdOrderByCreatedAtDesc(1L))
+        when(tenantInvitationRepository.findAllVisibleByUserIdOrderByCreatedAtDesc(1L))
                 .thenReturn(List.of(pending));
 
         List<TenantInvitationResponse> responses = tenantInvitationService.getMyInvitations();

@@ -20,6 +20,7 @@ import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.repository.TenantEmergencyContactRepository;
 import com.example.spring_boot_project_api.repository.TenantRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
+import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.service.TenantEmergencyContactService;
 
 import lombok.RequiredArgsConstructor;
@@ -32,6 +33,7 @@ public class TenantEmergencyContactServiceImpl implements TenantEmergencyContact
     private final TenantRepository tenantRepository;
     private final UserRepository userRepository;
     private final TenantEmergencyContactMapper contactMapper;
+    private final HouseAccessService houseAccessService;
 
     @Override
     @Transactional
@@ -96,8 +98,19 @@ public class TenantEmergencyContactServiceImpl implements TenantEmergencyContact
     private Tenant getOwnedTenant(Long tenantId) {
         Long currentUserId = getCurrentOwner().getId();
 
-        return tenantRepository.findByIdAndOwnerId(tenantId, currentUserId)
+        Tenant tenant = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> TenantNotFoundException.forId(tenantId));
+
+        boolean isOwner = tenant.getOwner().getId().equals(currentUserId);
+        if (isOwner) {
+            return tenant;
+        }
+
+        if (tenant.getHouse() != null && houseAccessService.canAccessHouse(tenant.getHouse().getId())) {
+            return tenant;
+        }
+
+        throw TenantNotFoundException.forId(tenantId);
     }
 
     private TenantEmergencyContact getOwnedContact(Long tenantId, Long contactId) {

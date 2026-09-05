@@ -104,15 +104,20 @@ public class RoomServiceImpl implements RoomService {
     public RoomResponse updateRoom(Long id, RoomRepuest request) {
         Room existing = getAccessibleRoom(id);
         Long currentUserId = securityUtils.getCurrentUserId();
-        verifyHouseAccess(request.getHouseId(), currentUserId);
+
+        Long targetHouseId = request.getHouseId();
+        if (targetHouseId != null && !targetHouseId.equals(existing.getHouseId())) {
+            throw new AccessDeniedException(
+                    "You do not have permission to access this resource");
+        }
+        verifyHouseAccess(existing.getHouseId(), currentUserId);
 
         if (!existing.getRoomNumber().equals(request.getRoomNumber())
-                && roomRepository.existsByHouseIdAndRoomNumber(request.getHouseId(), request.getRoomNumber())) {
+                && roomRepository.existsByHouseIdAndRoomNumber(existing.getHouseId(), request.getRoomNumber())) {
             throw new DuplicateResourceException(
                     "Room number already exists in this house: " + request.getRoomNumber());
         }
 
-        existing.setHouseId(request.getHouseId());
         existing.setRoomTypeId(request.getRoomTypeId());
         existing.setRoomNumber(request.getRoomNumber());
         existing.setName(request.getName());

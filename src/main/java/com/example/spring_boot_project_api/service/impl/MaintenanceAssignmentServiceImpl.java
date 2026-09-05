@@ -24,6 +24,7 @@ import com.example.spring_boot_project_api.repository.MaintenanceAssignmentRepos
 import com.example.spring_boot_project_api.repository.MaintenanceRequestRepository;
 import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
+import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.service.MaintenanceAssignmentService;
 
 import lombok.RequiredArgsConstructor;
@@ -37,6 +38,7 @@ public class MaintenanceAssignmentServiceImpl implements MaintenanceAssignmentSe
     private final UserRepository userRepository;
     private final UserHouseAccessRepository userHouseAccessRepository;
     private final MaintenanceAssignmentMapper assignmentMapper;
+    private final HouseAccessService houseAccessService;
 
     @Override
     @Transactional
@@ -107,8 +109,15 @@ public class MaintenanceAssignmentServiceImpl implements MaintenanceAssignmentSe
     }
 
     private MaintenanceRequest getOwnedRequest(Long requestId, Long ownerId) {
-        return requestRepository.findByIdAndOwnerId(requestId, ownerId)
+        MaintenanceRequest req = requestRepository.findById(requestId)
                 .orElseThrow(() -> MaintenanceRequestNotFoundException.forId(requestId));
+        if (req.getOwner().getId().equals(ownerId)) {
+            return req;
+        }
+        if (houseAccessService.canAccessHouse(req.getHouse().getId())) {
+            return req;
+        }
+        throw MaintenanceRequestNotFoundException.forId(requestId);
     }
 
     private User getCurrentOwner() {

@@ -17,6 +17,7 @@ public class UtilityTypeMapper {
                 type.getName(),
                 type.getCode(),
                 type.getUnit(),
+                type.getBillingMethod(),
                 type.getStatus(),
                 type.getCreatedAt(),
                 type.getUpdatedAt());
@@ -27,6 +28,9 @@ public class UtilityTypeMapper {
                 .name(request.name())
                 .code(request.code())
                 .unit(request.unit())
+                .billingMethod(request.billingMethod() != null
+                        ? request.billingMethod()
+                        : com.example.spring_boot_project_api.enums.UtilityBillingMethod.METERED)
                 .status(UtilityTypeStatus.ACTIVE)
                 .build();
     }

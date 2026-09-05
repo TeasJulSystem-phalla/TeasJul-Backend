@@ -1,5 +1,6 @@
 package com.example.spring_boot_project_api.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -14,6 +15,10 @@ public interface MaintenanceRequestRepository extends JpaRepository<MaintenanceR
     Optional<MaintenanceRequest> findByIdAndOwnerId(Long id, Long ownerId);
 
     List<MaintenanceRequest> findAllByOwnerIdOrderByCreatedAtDesc(Long ownerId);
+
+    List<MaintenanceRequest> findAllByTenantIdOrderByCreatedAtDesc(Long tenantId);
+
+    List<MaintenanceRequest> findAllByHouseIdInOrderByCreatedAtDesc(Collection<Long> houseIds);
 
     boolean existsByOwnerIdAndRequestNo(Long ownerId, String requestNo);
 

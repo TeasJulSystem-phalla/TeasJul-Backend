@@ -45,6 +45,14 @@ public class Tenant {
     @JoinColumn(name = "owner_id", nullable = false, foreignKey = @ForeignKey(name = "fk_tenants_owner"))
     private User owner;
 
+    @ManyToOne(fetch = FetchType.LAZY, optional = true)
+    @JoinColumn(name = "house_id", nullable = true, foreignKey = @ForeignKey(name = "fk_tenants_house"))
+    private House house;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = true)
+    @JoinColumn(name = "invited_by_id", nullable = true, foreignKey = @ForeignKey(name = "fk_tenants_invited_by"))
+    private User invitedBy;
+
     @Column(name = "tenant_code", nullable = false, length = 50)
     private String tenantCode;
 

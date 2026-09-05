@@ -117,7 +117,7 @@ public class TenantInvitationServiceImpl implements TenantInvitationService {
     public List<TenantInvitationResponse> getMyInvitations() {
         Long userId = securityUtils.getCurrentUserId();
         List<TenantInvitation> invitations = tenantInvitationRepository
-                .findAllByManagerIdOrderByCreatedAtDesc(userId);
+                .findAllVisibleByUserIdOrderByCreatedAtDesc(userId);
         invitations.forEach(this::markExpiredIfNeeded);
         return invitations.stream()
                 .map(tenantInvitationMapper::toResponse)
@@ -205,6 +205,8 @@ public class TenantInvitationServiceImpl implements TenantInvitationService {
         Tenant tenant = Tenant.builder()
                 .user(user)
                 .owner(owner)
+                .house(invitation.getHouse())
+                .invitedBy(invitation.getManager())
                 .tenantCode(generateUniqueTenantCode(owner.getId()))
                 .firstName(request.firstName().trim())
                 .lastName(request.lastName().trim())

@@ -1,6 +1,7 @@
 package com.example.spring_boot_project_api.service.impl;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -24,6 +25,7 @@ import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.repository.TenantRepository;
 import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
+import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.service.TenantService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
@@ -38,6 +40,7 @@ public class TenantServiceImpl implements TenantService {
     private final UserHouseAccessRepository userHouseAccessRepository;
     private final TenantMapper tenantMapper;
     private final SecurityUtils securityUtils;
+    private final HouseAccessService houseAccessService;
 
     @Override
     @Transactional
@@ -62,6 +65,7 @@ public class TenantServiceImpl implements TenantService {
         Tenant tenant = tenantMapper.toEntity(request);
         tenant.setUser(tenantUser);
         tenant.setOwner(owner);
+        tenant.setInvitedBy(owner);
 
         return tenantMapper.toResponse(tenantRepository.save(tenant));
     }
@@ -71,18 +75,12 @@ public class TenantServiceImpl implements TenantService {
     public List<TenantResponse> getMyTenants() {
         Long currentUserId = securityUtils.getCurrentUserId();
 
-        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
-            List<Long> assignedHouseIds = userHouseAccessRepository.findHouseIdsByUserId(currentUserId);
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER) && !securityUtils.hasRole(SecurityUtils.ROLE_OWNER)) {
+            List<Long> assignedHouseIds = houseAccessService.getAccessibleHouseIds();
             if (assignedHouseIds.isEmpty()) {
                 return Collections.emptyList();
             }
-            return tenantRepository.findActiveTenantsByHouseIds(
-                    assignedHouseIds,
-                    RentalContractStatus.ACTIVE,
-                    LocalDate.now(),
-                    null,
-                    Pageable.unpaged()
-            ).getContent().stream()
+            return tenantRepository.findAllByHouseIdsOrderByCreatedAtDesc(assignedHouseIds).stream()
                     .map(tenantMapper::toResponse)
                     .toList();
         }
@@ -96,13 +94,13 @@ public class TenantServiceImpl implements TenantService {
     @Override
     @Transactional(readOnly = true)
     public TenantResponse getTenantById(Long id) {
-        return tenantMapper.toResponse(getOwnedTenant(id));
+        return tenantMapper.toResponse(getAccessibleTenant(id));
     }
 
     @Override
     @Transactional
     public TenantResponse updateTenant(Long id, UpdateTenantRequest request) {
-        Tenant tenant = getOwnedTenant(id);
+        Tenant tenant = getAccessibleTenant(id);
 
         if (request.phone() != null) {
             if (tenantRepository.existsByOwnerIdAndPhoneAndIdNot(tenant.getOwner().getId(),
@@ -152,16 +150,28 @@ public class TenantServiceImpl implements TenantService {
     @Override
     @Transactional
     public void deactivateTenant(Long id) {
-        Tenant tenant = getOwnedTenant(id);
+        Tenant tenant = getAccessibleTenant(id);
         tenant.setStatus(TenantStatus.INACTIVE);
         tenantRepository.save(tenant);
     }
 
-    private Tenant getOwnedTenant(Long id) {
-        Long currentUserId = getCurrentOwner().getId();
+    private Tenant getAccessibleTenant(Long id) {
+        Long currentUserId = securityUtils.getCurrentUserId();
 
-        return tenantRepository.findByIdAndOwnerId(id, currentUserId)
+        Tenant tenant = tenantRepository.findById(id)
                 .orElseThrow(() -> TenantNotFoundException.forId(id));
+
+        boolean isOwner = tenant.getOwner().getId().equals(currentUserId);
+
+        if (isOwner) {
+            return tenant;
+        }
+
+        if (tenant.getHouse() != null && houseAccessService.canAccessHouse(tenant.getHouse().getId())) {
+            return tenant;
+        }
+
+        throw TenantNotFoundException.forId(id);
     }
 
     private void validateUniqueFields(Long ownerId, String tenantCode, String phone, Long tenantId) {

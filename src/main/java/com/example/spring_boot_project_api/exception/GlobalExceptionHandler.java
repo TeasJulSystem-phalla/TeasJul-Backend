@@ -179,6 +179,12 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(InvalidTenantQueryException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidTenantQuery(
+            InvalidTenantQueryException ex, HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(DuplicateResourceException.class)
     public ResponseEntity<ErrorResponse> handleDuplicateResource(DuplicateResourceException ex,
             HttpServletRequest request) {
@@ -243,6 +249,44 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleInvitationEmailMismatch(
             InvitationEmailMismatchException ex, HttpServletRequest request) {
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvoiceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleInvoiceNotFound(
+            InvoiceNotFoundException ex, HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvalidInvoiceOperationException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidInvoiceOperation(
+            InvalidInvoiceOperationException ex, HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(PaymentNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handlePaymentNotFound(
+            PaymentNotFoundException ex, HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(PaymentMethodNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handlePaymentMethodNotFound(
+            PaymentMethodNotFoundException ex, HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvalidPaymentOperationException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidPaymentOperation(
+            InvalidPaymentOperationException ex, HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(PayWayIntegrationException.class)
+    public ResponseEntity<ErrorResponse> handlePayWayIntegration(
+            PayWayIntegrationException ex, HttpServletRequest request) {
+        log.error("PayWay integration error on {} {}: {}", request.getMethod(), request.getRequestURI(),
+                ex.getMessage());
+        return build(HttpStatus.BAD_GATEWAY, ex.getMessage(), request);
     }
 
     @ExceptionHandler(NoResourceFoundException.class)

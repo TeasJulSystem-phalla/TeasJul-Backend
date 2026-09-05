@@ -121,7 +121,9 @@ public class UtilityTypeServiceImpl implements UtilityTypeService {
 
     private UtilityType getOwnedType(Long id) {
         Long currentUserId = getCurrentOwner().getId();
-        return typeRepository.findByIdAndOwnerId(id, currentUserId)
+        List<Long> scopedOwnerIds = resolveScopedOwnerIds();
+        return typeRepository.findById(id)
+                .filter(t -> scopedOwnerIds.contains(t.getOwner().getId()))
                 .orElseThrow(() -> UtilityTypeNotFoundException.forId(id));
     }
 
@@ -143,10 +145,17 @@ public class UtilityTypeServiceImpl implements UtilityTypeService {
     }
 
     private List<Long> resolveScopedOwnerIds() {
+        Long currentUserId = securityUtils.getCurrentUserId();
+        Long currentOwnerId = getCurrentOwner().getId();
+
         if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
-            return userHouseAccessRepository.findOwnerIdsByUserId(securityUtils.getCurrentUserId());
+            List<Long> ownerIds = new ArrayList<>(userHouseAccessRepository.findOwnerIdsByUserId(currentUserId));
+            if (!ownerIds.contains(currentOwnerId)) {
+                ownerIds.add(currentOwnerId);
+            }
+            return ownerIds;
         }
-        return List.of(getCurrentOwner().getId());
+        return List.of(currentOwnerId);
     }
 
     private PageResponse<UtilityTypeResponse> toPageResponse(Page<UtilityType> page) {

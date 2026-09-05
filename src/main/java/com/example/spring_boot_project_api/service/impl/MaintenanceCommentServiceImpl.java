@@ -19,6 +19,7 @@ import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.repository.MaintenanceCommentRepository;
 import com.example.spring_boot_project_api.repository.MaintenanceRequestRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
+import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.service.MaintenanceCommentService;
 
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,7 @@ public class MaintenanceCommentServiceImpl implements MaintenanceCommentService 
     private final MaintenanceRequestRepository requestRepository;
     private final UserRepository userRepository;
     private final MaintenanceCommentMapper commentMapper;
+    private final HouseAccessService houseAccessService;
 
     @Override
     @Transactional
@@ -70,8 +72,15 @@ public class MaintenanceCommentServiceImpl implements MaintenanceCommentService 
     }
 
     private MaintenanceRequest getOwnedRequest(Long requestId, Long ownerId) {
-        return requestRepository.findByIdAndOwnerId(requestId, ownerId)
+        MaintenanceRequest req = requestRepository.findById(requestId)
                 .orElseThrow(() -> MaintenanceRequestNotFoundException.forId(requestId));
+        if (req.getOwner().getId().equals(ownerId)) {
+            return req;
+        }
+        if (houseAccessService.canAccessHouse(req.getHouse().getId())) {
+            return req;
+        }
+        throw MaintenanceRequestNotFoundException.forId(requestId);
     }
 
     private User getCurrentOwner() {
