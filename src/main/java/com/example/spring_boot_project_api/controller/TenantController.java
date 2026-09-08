@@ -2,6 +2,9 @@ package com.example.spring_boot_project_api.controller;
 
 import java.util.List;
 
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -11,13 +14,17 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.spring_boot_project_api.dto.request.CreateTenantRequest;
 import com.example.spring_boot_project_api.dto.request.UpdateTenantRequest;
+import com.example.spring_boot_project_api.dto.response.PageResponse;
 import com.example.spring_boot_project_api.dto.response.TenantMeResponse;
 import com.example.spring_boot_project_api.dto.response.TenantResponse;
+import com.example.spring_boot_project_api.dto.response.TenantSummaryResponse;
 import com.example.spring_boot_project_api.dto.response.TenantUtilityResponse;
+import com.example.spring_boot_project_api.model.TenantStatus;
 import com.example.spring_boot_project_api.service.TenantPortalService;
 import com.example.spring_boot_project_api.service.TenantService;
 
@@ -70,10 +77,23 @@ public class TenantController {
     }
 
     @Operation(summary = "List my tenants",
-            description = "Returns all tenants belonging to the currently authenticated user.")
+            description = "Returns a paginated, server-side filtered list of tenants belonging to the "
+                    + "currently authenticated user. Search filters by name, code, phone or email. "
+                    + "Page size is capped server side.")
     @GetMapping
-    public ResponseEntity<List<TenantResponse>> getMyTenants() {
-        return ResponseEntity.ok(tenantService.getMyTenants());
+    public ResponseEntity<PageResponse<TenantResponse>> getMyTenants(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) TenantStatus status,
+            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(tenantService.getMyTenants(search, status, pageable));
+    }
+
+    @Operation(summary = "Tenant summary",
+            description = "Lightweight aggregate (total count + per-status counts) for stat cards. "
+                    + "Completely independent of filters/pagination applied to the list endpoint.")
+    @GetMapping("/summary")
+    public ResponseEntity<TenantSummaryResponse> getMyTenantsSummary() {
+        return ResponseEntity.ok(tenantService.getMyTenantsSummary());
     }
 
     @Operation(summary = "Get a tenant by id",

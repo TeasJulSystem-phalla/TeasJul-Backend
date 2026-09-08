@@ -29,6 +29,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import com.example.spring_boot_project_api.dto.request.UpdateUserRequest;
 import com.example.spring_boot_project_api.dto.response.PageResponse;
 import com.example.spring_boot_project_api.dto.response.UserResponse;
+import com.example.spring_boot_project_api.dto.response.UserSummaryResponse;
 import com.example.spring_boot_project_api.dto.response.UserTenantCandidateResponse;
 import com.example.spring_boot_project_api.exception.UserNotFoundException;
 import com.example.spring_boot_project_api.mapper.UserMapper;
@@ -114,14 +115,53 @@ class UserServiceImplTest {
     }
 
     @Test
-    void getAllUsersShouldReturnAllUsers() {
-        when(userRepository.findAll()).thenReturn(List.of(user()));
+    void getAllUsersShouldReturnPagedUsers() {
+        Page<User> page = new PageImpl<>(List.of(user()), PageRequest.of(0, 10), 1);
+        when(userRepository.findAllWithFilters(eq(null), eq(null), any(Pageable.class))).thenReturn(page);
         when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(true);
 
-        List<UserResponse> users = userService.getAllUsers();
+        PageResponse<UserResponse> users = userService.getAllUsers(null, null, PageRequest.of(0, 10));
 
-        assertThat(users).hasSize(1);
-        assertThat(users.get(0).email()).isEqualTo("john@example.com");
+        assertThat(users.content()).hasSize(1);
+        assertThat(users.content().get(0).email()).isEqualTo("john@example.com");
+        assertThat(users.totalElements()).isEqualTo(1);
+    }
+
+    @Test
+    void getAllUsersCapsPageSize() {
+        Page<User> page = new PageImpl<>(List.of(user()), PageRequest.of(0, 10), 1);
+        when(userRepository.findAllWithFilters(eq(null), eq(null), any(Pageable.class))).thenReturn(page);
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(true);
+
+        userService.getAllUsers(null, null, PageRequest.of(0, 99999));
+
+        org.mockito.ArgumentCaptor<Pageable> captor =
+                org.mockito.ArgumentCaptor.forClass(Pageable.class);
+        verify(userRepository).findAllWithFilters(eq(null), eq(null), captor.capture());
+        assertThat(captor.getValue().getPageSize()).isEqualTo(200);
+    }
+
+    @Test
+    void getAllUsersRequiresOwnerRole() {
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(false);
+
+        assertThatThrownBy(() -> userService.getAllUsers(null, null, PageRequest.of(0, 10)))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+    }
+
+    @Test
+    void getUsersSummaryGroupsByStatus() {
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(true);
+        when(userRepository.countGroupedByStatus())
+                .thenReturn(List.of(
+                        new Object[]{UserStatus.ACTIVE, 3L},
+                        new Object[]{UserStatus.LOCKED, 1L}));
+
+        UserSummaryResponse summary = userService.getUsersSummary();
+
+        assertThat(summary.total()).isEqualTo(4L);
+        assertThat(summary.statusCounts()).containsEntry("ACTIVE", 3L);
+        assertThat(summary.statusCounts()).containsEntry("LOCKED", 1L);
     }
 
     @Test

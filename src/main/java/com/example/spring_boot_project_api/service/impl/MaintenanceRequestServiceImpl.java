@@ -6,6 +6,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
@@ -41,6 +43,7 @@ import com.example.spring_boot_project_api.repository.TenantRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.service.MaintenanceRequestService;
+import com.example.spring_boot_project_api.service.NotificationService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -48,6 +51,8 @@ import lombok.RequiredArgsConstructor;
 @Service
 @RequiredArgsConstructor
 public class MaintenanceRequestServiceImpl implements MaintenanceRequestService {
+
+    private static final Logger log = LoggerFactory.getLogger(MaintenanceRequestServiceImpl.class);
 
     private static final DateTimeFormatter REQUEST_NO_DATE_FORMAT =
             DateTimeFormatter.ofPattern("yyyyMMdd");
@@ -72,6 +77,7 @@ public class MaintenanceRequestServiceImpl implements MaintenanceRequestService 
     private final TenantContextResolver tenantContextResolver;
     private final HouseAccessService houseAccessService;
     private final SecurityUtils securityUtils;
+    private final NotificationService notificationService;
 
     @Override
     @Transactional
@@ -95,7 +101,13 @@ public class MaintenanceRequestServiceImpl implements MaintenanceRequestService 
         }
         maintenanceRequest.setStatus(MaintenanceRequestStatus.PENDING);
 
-        return requestMapper.toResponse(requestRepository.save(maintenanceRequest));
+        MaintenanceRequest saved = requestRepository.save(maintenanceRequest);
+        try {
+            notificationService.notifyMaintenanceRequestCreated(saved);
+        } catch (RuntimeException e) {
+            log.warn("Failed to create maintenance-request notification", e);
+        }
+        return requestMapper.toResponse(saved);
     }
 
     @Override
@@ -154,7 +166,13 @@ public class MaintenanceRequestServiceImpl implements MaintenanceRequestService 
         maintenanceRequest.setStatus(MaintenanceRequestStatus.PENDING);
         maintenanceRequest.setRequestNo(generateRequestNo(owner.getId()));
 
-        return requestMapper.toResponse(requestRepository.save(maintenanceRequest));
+        MaintenanceRequest saved = requestRepository.save(maintenanceRequest);
+        try {
+            notificationService.notifyMaintenanceRequestCreated(saved);
+        } catch (RuntimeException e) {
+            log.warn("Failed to create maintenance-request notification", e);
+        }
+        return requestMapper.toResponse(saved);
     }
 
     @Override
@@ -198,6 +216,11 @@ public class MaintenanceRequestServiceImpl implements MaintenanceRequestService 
             maintenanceRequest.setResolvedAt(LocalDateTime.now());
         }
         requestRepository.save(maintenanceRequest);
+        try {
+            notificationService.notifyMaintenanceStatusChanged(maintenanceRequest);
+        } catch (RuntimeException e) {
+            log.warn("Failed to create maintenance-status notification", e);
+        }
     }
 
     private MaintenanceRequest getOwnedRequest(Long id) {

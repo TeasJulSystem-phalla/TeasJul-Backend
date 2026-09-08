@@ -26,6 +26,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.example.spring_boot_project_api.config.JwtAuthenticationFilter;
 import com.example.spring_boot_project_api.config.SecurityConfig;
+import com.example.spring_boot_project_api.dto.response.PageResponse;
 import com.example.spring_boot_project_api.dto.response.UserResponse;
 import com.example.spring_boot_project_api.exception.UserNotFoundException;
 import com.example.spring_boot_project_api.model.UserStatus;
@@ -33,6 +34,8 @@ import com.example.spring_boot_project_api.service.UserHouseAccessService;
 import com.example.spring_boot_project_api.service.UserRoleService;
 import com.example.spring_boot_project_api.service.UserService;
 import com.example.spring_boot_project_api.util.JwtUtil;
+
+import org.springframework.data.domain.Pageable;
 
 @WebMvcTest(UserController.class)
 @Import({SecurityConfig.class, JwtAuthenticationFilter.class, JwtUtil.class})
@@ -94,12 +97,13 @@ class UserControllerTest {
     @Test
     void protectedEndpointShouldAcceptValidJwt() throws Exception {
         when(userDetailsService.loadUserByUsername("johndoe")).thenReturn(springUser());
-        when(userService.getAllUsers()).thenReturn(List.of(sampleUser()));
+        when(userService.getAllUsers(any(), any(), any(Pageable.class)))
+                .thenReturn(PageResponse.of(List.of(sampleUser()), 0, 10, 1, 1));
 
         mockMvc.perform(get("/api/v1/users")
                         .header("Authorization", "Bearer " + validToken()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].username").value("johndoe"));
+                .andExpect(jsonPath("$.content[0].username").value("johndoe"));
     }
 
     @Test

@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import com.example.spring_boot_project_api.model.User;
+import com.example.spring_boot_project_api.model.UserStatus;
 
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
@@ -39,4 +40,20 @@ public interface UserRepository extends JpaRepository<User, Long> {
               AND NOT EXISTS (SELECT 1 FROM Tenant t WHERE t.user.id = u.id)
             """)
     Page<User> findAvailableForTenant(@Param("q") String q, Pageable pageable);
+
+    @Query("""
+            SELECT u FROM User u
+            WHERE (:status IS NULL OR u.status = :status)
+              AND (:q IS NULL OR :q = ''
+                   OR LOWER(u.firstName) LIKE LOWER(CONCAT('%', :q, '%'))
+                   OR LOWER(u.lastName) LIKE LOWER(CONCAT('%', :q, '%'))
+                   OR LOWER(CONCAT(TRIM(u.firstName), ' ', TRIM(u.lastName))) LIKE LOWER(CONCAT('%', :q, '%'))
+                   OR LOWER(u.email) LIKE LOWER(CONCAT('%', :q, '%'))
+                   OR LOWER(u.phone) LIKE LOWER(CONCAT('%', :q, '%'))
+                   OR LOWER(u.username) LIKE LOWER(CONCAT('%', :q, '%')))
+            """)
+    Page<User> findAllWithFilters(@Param("q") String q, @Param("status") UserStatus status, Pageable pageable);
+
+    @Query("SELECT u.status AS status, COUNT(u) AS cnt FROM User u GROUP BY u.status")
+    java.util.List<Object[]> countGroupedByStatus();
 }

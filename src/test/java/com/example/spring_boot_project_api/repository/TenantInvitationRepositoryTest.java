@@ -191,6 +191,35 @@ class TenantInvitationRepositoryTest {
                 .doesNotContain(inviteA.getId());
     }
 
+    @Test
+    void ownerIssuedInvitationIsVisibleToTheManagingManagerButNotOthers() {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        User owner = persistUser("owner_" + suffix);
+        User managerA = persistUser("managerA_" + suffix);
+        User managerB = persistUser("managerB_" + suffix);
+        House houseA = persistHouse(owner, "CCC House");
+        House houseB = persistHouse(owner, "DD House");
+
+        // The owner issues the invitation on house A; no manager created it.
+        TenantInvitation ownerIssued = persistInvitation(owner, houseA,
+                "owner_issued_" + suffix + "@example.com", TenantInvitationStatus.PENDING,
+                LocalDateTime.now().plusMinutes(5));
+
+        persistHouseAccess(managerA, houseA);
+        persistHouseAccess(managerB, houseB);
+        entityManager.getEntityManager().clear();
+
+        assertThat(tenantInvitationRepository
+                .findAllVisibleByUserIdOrderByCreatedAtDesc(managerA.getId()))
+                .extracting(TenantInvitation::getId)
+                .contains(ownerIssued.getId());
+
+        assertThat(tenantInvitationRepository
+                .findAllVisibleByUserIdOrderByCreatedAtDesc(managerB.getId()))
+                .extracting(TenantInvitation::getId)
+                .doesNotContain(ownerIssued.getId());
+    }
+
     private UserHouseAccess persistHouseAccess(User user, House house) {
         UserHouseAccess access = UserHouseAccess.builder()
                 .id(new UserHouseAccessId(user.getId(), house.getId()))

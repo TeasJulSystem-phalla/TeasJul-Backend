@@ -3,6 +3,7 @@ package com.example.spring_boot_project_api.repository;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -15,6 +16,7 @@ public interface RoomAmenityRepository extends JpaRepository<RoomAmenity, RoomAm
 
     boolean existsByIdRoomIdAndIdAmenityId(Long roomId, Long amenityId);
 
+    @EntityGraph(attributePaths = "amenity")
     List<RoomAmenity> findByIdRoomId(Long roomId);
 
     Optional<RoomAmenity> findByIdRoomIdAndIdAmenityId(Long roomId, Long amenityId);

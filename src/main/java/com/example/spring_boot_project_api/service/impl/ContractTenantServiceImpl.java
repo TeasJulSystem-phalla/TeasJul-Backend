@@ -3,6 +3,8 @@ package com.example.spring_boot_project_api.service.impl;
 import java.time.LocalDate;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +28,7 @@ import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.TenantRepository;
 import com.example.spring_boot_project_api.service.ContractTenantService;
 import com.example.spring_boot_project_api.service.HouseAccessService;
+import com.example.spring_boot_project_api.service.NotificationService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -34,6 +37,8 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 @Transactional
 public class ContractTenantServiceImpl implements ContractTenantService {
+    private static final Logger log = LoggerFactory.getLogger(ContractTenantServiceImpl.class);
+
     private final ContractTenantRepository contractTenantRepository;
     private final RentalContractRepository contractRepository;
     private final RoomRepository roomRepository;
@@ -41,6 +46,7 @@ public class ContractTenantServiceImpl implements ContractTenantService {
     private final ContractTenantMapper contractTenantMapper;
     private final SecurityUtils securityUtils;
     private final HouseAccessService houseAccessService;
+    private final NotificationService notificationService;
 
     @Override
     public ContractTenantResponse addTenantToContract(ContractTenantRequest request) {
@@ -79,6 +85,11 @@ public class ContractTenantServiceImpl implements ContractTenantService {
         }
 
         syncTenantStatus(saved.getTenantId());
+        try {
+            notificationService.notifyRoomAssigned(contract, tenant);
+        } catch (RuntimeException e) {
+            log.warn("Failed to create room-assigned notification", e);
+        }
         return contractTenantMapper.toResponse(saved);
     }
 

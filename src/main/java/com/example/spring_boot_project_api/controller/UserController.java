@@ -20,7 +20,9 @@ import com.example.spring_boot_project_api.dto.response.HouseResponse;
 import com.example.spring_boot_project_api.dto.response.PageResponse;
 import com.example.spring_boot_project_api.dto.response.RoleResponse;
 import com.example.spring_boot_project_api.dto.response.UserResponse;
+import com.example.spring_boot_project_api.dto.response.UserSummaryResponse;
 import com.example.spring_boot_project_api.dto.response.UserTenantCandidateResponse;
+import com.example.spring_boot_project_api.model.UserStatus;
 import com.example.spring_boot_project_api.service.UserHouseAccessService;
 import com.example.spring_boot_project_api.service.UserRoleService;
 import com.example.spring_boot_project_api.service.UserService;
@@ -51,9 +53,22 @@ public class UserController {
         return ResponseEntity.ok(userService.searchAvailableForTenant(q, pageable));
     }
 
+    @Operation(summary = "List all users",
+            description = "Paginated, server-side search and status filter for all users in the system. "
+                    + "Only accessible to owners. Page size is capped server side.")
     @GetMapping
-    public ResponseEntity<List<UserResponse>> getAllUsers() {
-        return ResponseEntity.ok(userService.getAllUsers());
+    public ResponseEntity<PageResponse<UserResponse>> getAllUsers(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) UserStatus status,
+            @PageableDefault(size = 10, sort = "firstName", direction = Sort.Direction.ASC) Pageable pageable) {
+        return ResponseEntity.ok(userService.getAllUsers(search, status, pageable));
+    }
+
+    @Operation(summary = "User summary",
+            description = "Lightweight aggregate (total count + per-status counts) for admin stat cards.")
+    @GetMapping("/summary")
+    public ResponseEntity<UserSummaryResponse> getUsersSummary() {
+        return ResponseEntity.ok(userService.getUsersSummary());
     }
 
     @GetMapping("/me")

@@ -2,6 +2,9 @@ package com.example.spring_boot_project_api.controller;
 
 import java.util.List;
 
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -16,6 +19,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.spring_boot_project_api.dto.request.RentalContractRequest;
+import com.example.spring_boot_project_api.dto.response.ContractSummaryResponse;
+import com.example.spring_boot_project_api.dto.response.PageResponse;
 import com.example.spring_boot_project_api.dto.response.RentalContractResponse;
 import com.example.spring_boot_project_api.enums.RentalContractStatus;
 import com.example.spring_boot_project_api.service.RentalContractService;
@@ -43,8 +48,12 @@ public class RentalContractController {
     }
 
     @GetMapping("/owner/{ownerId}")
-    public ResponseEntity<List<RentalContractResponse>> getContractsByOwner(@PathVariable Long ownerId) {
-        return ResponseEntity.ok(contractService.getContractsByOwner(ownerId));
+    public ResponseEntity<PageResponse<RentalContractResponse>> getContractsByOwner(
+            @PathVariable Long ownerId,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) RentalContractStatus status,
+            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(contractService.getContractsByOwner(ownerId, search, status, pageable));
     }
 
     @GetMapping("/room/{roomId}")
@@ -53,8 +62,15 @@ public class RentalContractController {
     }
 
     @GetMapping("/status/{status}")
-    public ResponseEntity<List<RentalContractResponse>> getContractsByStatus(@PathVariable RentalContractStatus status) {
-        return ResponseEntity.ok(contractService.getContractsByStatus(status));
+    public ResponseEntity<PageResponse<RentalContractResponse>> getContractsByStatus(
+            @PathVariable RentalContractStatus status,
+            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(contractService.getContractsByStatus(status, pageable));
+    }
+
+    @GetMapping("/summary")
+    public ResponseEntity<ContractSummaryResponse> getContractsSummary() {
+        return ResponseEntity.ok(contractService.getContractsSummary());
     }
 
     @PutMapping("/{id}")

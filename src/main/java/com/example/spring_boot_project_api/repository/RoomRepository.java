@@ -1,5 +1,6 @@
 package com.example.spring_boot_project_api.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -31,6 +32,10 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
     long countByHouseIdAndStatus(Long houseId, RoomStatus status);
 
     long countByHouseId(Long houseId);
+
+    long countByHouseIdIn(Collection<Long> houseIds);
+
+    long countByHouseIdInAndStatus(Collection<Long> houseIds, RoomStatus status);
 
     @Query("SELECT r FROM Room r WHERE r.houseId = :houseId AND r.ownerId = :ownerId " +
             "AND (:search IS NULL OR UPPER(r.roomNumber) LIKE UPPER(CONCAT('%', :search, '%')) " +

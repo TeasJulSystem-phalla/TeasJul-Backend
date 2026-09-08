@@ -5,8 +5,15 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -64,6 +71,7 @@ import com.example.spring_boot_project_api.repository.UtilityRateRepository;
 import com.example.spring_boot_project_api.repository.UtilityTypeRepository;
 import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.service.InvoiceService;
+import com.example.spring_boot_project_api.service.NotificationService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import jakarta.persistence.criteria.Predicate;
@@ -74,6 +82,8 @@ import lombok.RequiredArgsConstructor;
 @Service
 @RequiredArgsConstructor
 public class InvoiceServiceImpl implements InvoiceService {
+
+    private static final Logger log = LoggerFactory.getLogger(InvoiceServiceImpl.class);
 
     private final InvoiceRepository invoiceRepository;
     private final InvoiceMapper invoiceMapper;
@@ -90,6 +100,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final UserHouseAccessRepository userHouseAccessRepository;
     private final SecurityUtils securityUtils;
     private final HouseAccessService houseAccessService;
+    private final NotificationService notificationService;
 
     // ---- Preview ------------------------------------------------------
 
@@ -164,6 +175,11 @@ public class InvoiceServiceImpl implements InvoiceService {
         }
 
         Invoice saved = invoiceRepository.save(invoice);
+        try {
+            notificationService.notifyInvoiceCreated(saved);
+        } catch (RuntimeException e) {
+            log.warn("Failed to create invoice notification", e);
+        }
         return invoiceMapper.toResponse(saved, ctx.details());
     }
 
@@ -234,21 +250,76 @@ public class InvoiceServiceImpl implements InvoiceService {
 
         List<Long> accessibleHouseIds = houseAccessService.getAccessibleHouseIds();
 
+        // Owners/managers without any house access must never see invoices that
+        // belong to other owners' houses.
+        boolean isAdminScope = !accessibleHouseIds.isEmpty();
+
+        // A tenant that reaches this endpoint must only ever see the invoices of
+        // their own linked tenant profile, never invoices belonging to other rents.
+        Long tenantScopeId = null;
+        if (!isAdminScope) {
+            if (!securityUtils.hasRole(SecurityUtils.ROLE_TENANT)
+                    || securityUtils.hasRole(SecurityUtils.ROLE_OWNER)
+                    || securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+                return PageResponse.of(List.of(), pageable.getPageNumber(),
+                        pageable.getPageSize(), 0, 0);
+            }
+            tenantScopeId = tenantRepository.findByUserId(currentUserId)
+                    .map(Tenant::getId)
+                    .orElse(null);
+            if (tenantScopeId == null) {
+                return PageResponse.of(List.of(), pageable.getPageNumber(),
+                        pageable.getPageSize(), 0, 0);
+            }
+            if (tenantId != null && !tenantId.equals(tenantScopeId)) {
+                throw new org.springframework.security.access.AccessDeniedException(
+                        "You do not have permission to access this resource");
+            }
+        }
+
+        List<Long> scopeHouseIds = List.of();
+        if (isAdminScope) {
+            scopeHouseIds = accessibleHouseIds;
+            if (houseId != null) {
+                houseAccessService.requireHouseAccess(houseId);
+                scopeHouseIds = List.of(houseId);
+            }
+        }
+        final List<Long> finalScopeHouseIds = scopeHouseIds;
+        final Long finalTenantScopeId = tenantScopeId;
+        final Long requestTenantId = isAdminScope ? tenantId : finalTenantScopeId;
+
         Specification<Invoice> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
-            if (!accessibleHouseIds.isEmpty()) {
+
+            Subquery<Long> contractSub = query.subquery(Long.class);
+            Root<RentalContract> contractRoot = contractSub.from(RentalContract.class);
+
+            if (isAdminScope) {
                 Subquery<Long> roomSub = query.subquery(Long.class);
                 Root<Room> roomRoot = roomSub.from(Room.class);
                 roomSub.select(roomRoot.get("id"))
-                        .where(roomRoot.get("houseId").in(accessibleHouseIds));
-
-                Subquery<Long> contractSub = query.subquery(Long.class);
-                Root<RentalContract> contractRoot = contractSub.from(RentalContract.class);
+                        .where(roomRoot.get("houseId").in(finalScopeHouseIds));
                 contractSub.select(contractRoot.get("id"))
                         .where(contractRoot.get("roomId").in(roomSub));
-
-                predicates.add(root.get("contractId").in(contractSub));
+            } else {
+                Subquery<Long> linkedContractSub = query.subquery(Long.class);
+                Root<ContractTenant> linkRoot = linkedContractSub.from(ContractTenant.class);
+                linkedContractSub.select(linkRoot.get("contractId"))
+                        .where(cb.equal(linkRoot.get("tenantId"), finalTenantScopeId));
+                contractSub.select(contractRoot.get("id"))
+                        .where(contractRoot.get("id").in(linkedContractSub));
             }
+            predicates.add(root.get("contractId").in(contractSub));
+
+            if (requestTenantId != null) {
+                Subquery<Long> tenantContractSub = query.subquery(Long.class);
+                Root<ContractTenant> ctRoot = tenantContractSub.from(ContractTenant.class);
+                tenantContractSub.select(ctRoot.get("contractId"))
+                        .where(cb.equal(ctRoot.get("tenantId"), requestTenantId));
+                predicates.add(root.get("contractId").in(tenantContractSub));
+            }
+
             if (status != null) predicates.add(cb.equal(root.get("status"), status));
             if (billingYear != null) predicates.add(cb.equal(root.get("billingYear"), billingYear));
             if (billingMonth != null) predicates.add(cb.equal(root.get("billingMonth"), billingMonth));
@@ -293,39 +364,111 @@ public class InvoiceServiceImpl implements InvoiceService {
 
         Page<Invoice> page = invoiceRepository.findAll(spec, pageable);
 
-        List<Invoice> filtered = new ArrayList<>();
-        for (Invoice inv : page.getContent()) {
-            RentalContract contract = contractRepository.findById(inv.getContractId()).orElse(null);
-            if (contract == null) continue;
-            Room room = roomRepository.findById(contract.getRoomId()).orElse(null);
-            if (room == null) continue;
-
-            if (houseId != null && !room.getHouseId().equals(houseId)) continue;
-            if (tenantId != null) {
-                boolean linked = contractTenantRepository.existsByContractIdAndTenantId(
-                        inv.getContractId(), tenantId);
-                if (!linked) continue;
-            }
-
-            Tenant tenant = primaryTenantOf(inv.getContractId());
-            if (search != null && !search.isBlank()) {
-                String q = search.trim().toLowerCase();
-                boolean matchNumber = inv.getInvoiceNo().toLowerCase().contains(q);
-                boolean matchTenant = tenant != null
-                        && (tenant.getFirstName().toLowerCase().contains(q)
-                                || tenant.getLastName().toLowerCase().contains(q));
-                if (!matchNumber && !matchTenant) continue;
-            }
-
-            filtered.add(inv);
-        }
-
-        List<InvoiceResponse> content = filtered.stream()
-                .map(inv -> invoiceMapper.toResponse(inv, resolveDetails(inv)))
-                .toList();
+        List<InvoiceResponse> content = toResponsesWithDetails(page.getContent());
 
         return PageResponse.of(content, page.getNumber(), page.getSize(),
                 page.getTotalElements(), page.getTotalPages());
+    }
+
+    private List<InvoiceResponse> toResponsesWithDetails(List<Invoice> invoices) {
+        if (invoices == null || invoices.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> invoiceIds = invoices.stream()
+                .map(Invoice::getId)
+                .filter(Objects::nonNull)
+                .toList();
+        List<Long> contractIds = invoices.stream()
+                .map(Invoice::getContractId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        // Load all items of the page in one query instead of one lazy load per invoice.
+        Map<Long, List<InvoiceItem>> itemsByInvoice = invoiceIds.isEmpty() ? Map.of()
+                : invoiceRepository.findWithItemsByIds(invoiceIds).stream()
+                        .collect(Collectors.toMap(Invoice::getId, Invoice::getItems));
+        for (Invoice invoice : invoices) {
+            invoice.setItems(itemsByInvoice.getOrDefault(invoice.getId(), List.of()));
+        }
+
+        Map<Long, RentalContract> contracts = contractIds.isEmpty() ? Map.of()
+                : contractRepository.findAllById(contractIds).stream()
+                        .collect(Collectors.toMap(RentalContract::getId, c -> c));
+
+        List<Long> roomIds = contracts.values().stream()
+                .map(RentalContract::getRoomId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, Room> rooms = roomIds.isEmpty() ? Map.of()
+                : roomRepository.findAllById(roomIds).stream()
+                        .collect(Collectors.toMap(Room::getId, r -> r));
+
+        List<Long> houseIds = rooms.values().stream()
+                .map(Room::getHouseId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, House> houses = houseIds.isEmpty() ? Map.of()
+                : houseRepository.findAllById(houseIds).stream()
+                        .collect(Collectors.toMap(House::getId, h -> h));
+
+        Map<Long, ContractTenant> primaryLinks = primaryTenantLinks(contractIds);
+        List<Long> tenantIds = primaryLinks.values().stream()
+                .map(ContractTenant::getTenantId)
+                .distinct()
+                .toList();
+        Map<Long, Tenant> tenants = tenantIds.isEmpty() ? Map.of()
+                : tenantRepository.findAllById(tenantIds).stream()
+                        .collect(Collectors.toMap(Tenant::getId, t -> t));
+
+        return invoices.stream()
+                .map(invoice -> {
+                    RentalContract contract = contracts.get(invoice.getContractId());
+                    Room room = contract != null ? rooms.get(contract.getRoomId()) : null;
+                    House house = room != null ? houses.get(room.getHouseId()) : null;
+                    ContractTenant link = primaryLinks.get(invoice.getContractId());
+                    Tenant tenant = link != null ? tenants.get(link.getTenantId()) : null;
+                    Object[] details = new Object[] {
+                            contract != null ? contract.getContractNo() : null,
+                            tenant != null ? tenant.getId() : null,
+                            tenant != null
+                                    ? tenant.getFirstName() + " " + tenant.getLastName()
+                                    : null,
+                            room != null ? room.getId() : null,
+                            room != null ? room.getRoomNumber() : null,
+                            house != null ? house.getId() : null,
+                            house != null ? house.getName() : null
+                    };
+                    return invoiceMapper.toResponse(invoice, details);
+                })
+                .toList();
+    }
+
+    private Map<Long, ContractTenant> primaryTenantLinks(List<Long> contractIds) {
+        if (contractIds == null || contractIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, List<ContractTenant>> linksByContract = contractTenantRepository
+                .findByContractIdIn(List.copyOf(contractIds)).stream()
+                .collect(Collectors.groupingBy(ContractTenant::getContractId));
+
+        Map<Long, ContractTenant> result = new HashMap<>();
+        for (Map.Entry<Long, List<ContractTenant>> entry : linksByContract.entrySet()) {
+            ContractTenant chosen = entry.getValue().stream()
+                    .filter(l -> Boolean.TRUE.equals(l.getIsPrimary()))
+                    .findFirst()
+                    .orElseGet(() -> entry.getValue().stream()
+                            .min(Comparator.comparing(ContractTenant::getJoinedAt)
+                                    .thenComparing(ContractTenant::getId))
+                            .orElse(null));
+            if (chosen != null) {
+                result.put(entry.getKey(), chosen);
+            }
+        }
+        return result;
     }
 
     // ---- Get / modify -------------------------------------------------

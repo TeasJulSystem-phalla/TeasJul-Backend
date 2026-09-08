@@ -24,6 +24,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import com.example.spring_boot_project_api.dto.request.CreateTenantRequest;
+import com.example.spring_boot_project_api.dto.response.PageResponse;
 import com.example.spring_boot_project_api.dto.response.TenantResponse;
 import com.example.spring_boot_project_api.exception.DuplicateResourceException;
 import com.example.spring_boot_project_api.exception.UserNotFoundException;
@@ -39,7 +40,11 @@ import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.impl.TenantServiceImpl;
 import com.example.spring_boot_project_api.util.SecurityUtils;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 @ExtendWith(MockitoExtension.class)
 class TenantServiceImplTest {
@@ -233,23 +238,21 @@ class TenantServiceImplTest {
         tenantA.setInvitedBy(managerA);
         tenantA.setStatus(TenantStatus.PENDING);
 
-        when(securityUtils.getCurrentUserId()).thenReturn(managerA.getId());
         when(securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)).thenReturn(true);
         when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(false);
         when(houseAccessService.getAccessibleHouseIds()).thenReturn(List.of(10L));
-        when(tenantRepository.findAllByHouseIdsOrderByCreatedAtDesc(List.of(10L)))
-                .thenReturn(List.of(tenantA));
+        Page<Tenant> page = new PageImpl<>(List.of(tenantA), PageRequest.of(0, 10), 1);
+        when(tenantRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
 
-        List<TenantResponse> responses = tenantService.getMyTenants();
+        PageResponse<TenantResponse> responses = tenantService.getMyTenants(null, null, PageRequest.of(0, 10));
 
-        assertThat(responses).hasSize(1);
-        assertThat(responses.get(0).id()).isEqualTo(7L);
-        assertThat(responses.get(0).invitedById()).isEqualTo(managerA.getId());
+        assertThat(responses.content()).hasSize(1);
+        assertThat(responses.content().get(0).id()).isEqualTo(7L);
+        assertThat(responses.content().get(0).invitedById()).isEqualTo(managerA.getId());
     }
 
     @Test
     void getMyTenantsReturnsAllTenantsForOwner() {
-        authAs(owner);
         Tenant tenantA = withOwner(owner, null);
         tenantA.setId(7L);
         Tenant tenantB = withOwner(owner, null);
@@ -257,13 +260,14 @@ class TenantServiceImplTest {
 
         when(securityUtils.getCurrentUserId()).thenReturn(owner.getId());
         when(securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)).thenReturn(false);
-        when(tenantRepository.findAllByOwnerIdOrderByCreatedAtDesc(owner.getId()))
-                .thenReturn(List.of(tenantA, tenantB));
+        Page<Tenant> page = new PageImpl<>(List.of(tenantA, tenantB), PageRequest.of(0, 10), 2);
+        when(tenantRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
 
-        List<TenantResponse> responses = tenantService.getMyTenants();
+        PageResponse<TenantResponse> responses = tenantService.getMyTenants(null, null, PageRequest.of(0, 10));
 
-        assertThat(responses).hasSize(2);
-        assertThat(responses).extracting(TenantResponse::id).containsExactly(7L, 8L);
+        assertThat(responses.content()).hasSize(2);
+        assertThat(responses.content()).extracting(TenantResponse::id).containsExactly(7L, 8L);
+        assertThat(responses.totalElements()).isEqualTo(2);
     }
 
     @Test

@@ -1,11 +1,14 @@
 package com.example.spring_boot_project_api.service.impl;
 
-import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
@@ -13,8 +16,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.example.spring_boot_project_api.dto.request.CreateTenantRequest;
 import com.example.spring_boot_project_api.dto.request.UpdateTenantRequest;
+import com.example.spring_boot_project_api.dto.response.PageResponse;
 import com.example.spring_boot_project_api.dto.response.TenantResponse;
-import com.example.spring_boot_project_api.enums.RentalContractStatus;
+import com.example.spring_boot_project_api.dto.response.TenantSummaryResponse;
 import com.example.spring_boot_project_api.exception.DuplicateResourceException;
 import com.example.spring_boot_project_api.exception.TenantNotFoundException;
 import com.example.spring_boot_project_api.exception.UserNotFoundException;
@@ -70,25 +74,49 @@ public class TenantServiceImpl implements TenantService {
         return tenantMapper.toResponse(tenantRepository.save(tenant));
     }
 
+    private static final int MAX_LIST_SIZE = 200;
+
     @Override
     @Transactional(readOnly = true)
-    public List<TenantResponse> getMyTenants() {
-        Long currentUserId = securityUtils.getCurrentUserId();
+    public PageResponse<TenantResponse> getMyTenants(String search, TenantStatus status, Pageable pageable) {
+        Pageable capped = PageRequest.of(pageable.getPageNumber(),
+                Math.min(pageable.getPageSize(), MAX_LIST_SIZE),
+                pageable.getSort());
+        String q = normalize(search);
 
+        List<Long> houseIds = null;
         if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER) && !securityUtils.hasRole(SecurityUtils.ROLE_OWNER)) {
-            List<Long> assignedHouseIds = houseAccessService.getAccessibleHouseIds();
-            if (assignedHouseIds.isEmpty()) {
-                return Collections.emptyList();
+            houseIds = houseAccessService.getAccessibleHouseIds();
+            if (houseIds.isEmpty()) {
+                return PageResponse.of(List.of(), pageable.getPageNumber(), pageable.getPageSize(), 0L, 0);
             }
-            return tenantRepository.findAllByHouseIdsOrderByCreatedAtDesc(assignedHouseIds).stream()
-                    .map(tenantMapper::toResponse)
-                    .toList();
         }
 
-        User owner = getCurrentOwner();
-        return tenantRepository.findAllByOwnerIdOrderByCreatedAtDesc(owner.getId()).stream()
+        Long ownerId = (houseIds == null) ? securityUtils.getCurrentUserId() : null;
+        org.springframework.data.domain.Page<Tenant> page =
+                tenantRepository.findAll(tenantFilters(ownerId, houseIds, q, status), capped);
+
+        List<TenantResponse> content = page.getContent().stream()
                 .map(tenantMapper::toResponse)
                 .toList();
+        return PageResponse.of(content, page.getNumber(), page.getSize(),
+                page.getTotalElements(), page.getTotalPages());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public TenantSummaryResponse getMyTenantsSummary() {
+        List<Object[]> rows;
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER) && !securityUtils.hasRole(SecurityUtils.ROLE_OWNER)) {
+            List<Long> houseIds = houseAccessService.getAccessibleHouseIds();
+            if (houseIds.isEmpty()) {
+                return new TenantSummaryResponse(0L, java.util.Map.of());
+            }
+            rows = tenantRepository.countGroupByHouseIds(houseIds);
+        } else {
+            rows = tenantRepository.countGroupByOwnerId(securityUtils.getCurrentUserId());
+        }
+        return buildTenantSummary(rows);
     }
 
     @Override
@@ -198,5 +226,45 @@ public class TenantServiceImpl implements TenantService {
         return userRepository.findByUsername(userDetails.getUsername())
                 .or(() -> userRepository.findByEmail(userDetails.getUsername()))
                 .orElseThrow(() -> UserNotFoundException.forId(null));
+    }
+
+    private Specification<Tenant> tenantFilters(Long ownerId, List<Long> houseIds, String q, TenantStatus status) {
+        return (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> preds = new ArrayList<>();
+            if (ownerId != null) {
+                preds.add(cb.equal(root.get("owner").get("id"), ownerId));
+            } else {
+                preds.add(root.get("house").get("id").in(houseIds));
+            }
+            if (status != null) {
+                preds.add(cb.equal(root.get("status"), status));
+            }
+            if (q != null && !q.isBlank()) {
+                String like = "%" + q + "%";
+                preds.add(cb.or(
+                        cb.like(cb.lower(root.get("firstName")), like),
+                        cb.like(cb.lower(root.get("lastName")), like),
+                        cb.like(cb.lower(root.get("tenantCode")), like),
+                        cb.like(cb.lower(root.get("phone")), like),
+                        cb.like(cb.lower(root.get("email")), like)));
+            }
+            return cb.and(preds.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+    }
+
+    private TenantSummaryResponse buildTenantSummary(List<Object[]> rows) {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        long total = 0L;
+        for (Object[] row : rows) {
+            String status = row[0].toString();
+            long cnt = ((Number) row[1]).longValue();
+            counts.put(status, cnt);
+            total += cnt;
+        }
+        return new TenantSummaryResponse(total, counts);
+    }
+
+    private static String normalize(String q) {
+        return q == null ? null : q.trim();
     }
 }
