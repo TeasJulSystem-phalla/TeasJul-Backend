@@ -58,7 +58,10 @@ public class RoomTypeServiceImpl implements RoomTypeService {
     @Override
     @Transactional(readOnly = true)
     public List<RoomTypeResponse> getRoomTypesByOwner(Long ownerId) {
-        return resolveScopedRoomTypes().stream()
+        if (ownerId == null || !resolveScopedOwnerIds().contains(ownerId)) {
+            return Collections.emptyList();
+        }
+        return roomTypeRepository.findByOwnerId(ownerId).stream()
                 .map(roomTypeMapper::toDto)
                 .toList();
     }

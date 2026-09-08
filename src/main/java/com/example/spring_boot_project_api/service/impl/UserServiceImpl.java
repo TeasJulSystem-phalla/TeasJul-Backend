@@ -1,6 +1,8 @@
 package com.example.spring_boot_project_api.service.impl;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -16,10 +18,12 @@ import org.springframework.transaction.annotation.Transactional;
 import com.example.spring_boot_project_api.dto.request.UpdateUserRequest;
 import com.example.spring_boot_project_api.dto.response.PageResponse;
 import com.example.spring_boot_project_api.dto.response.UserResponse;
+import com.example.spring_boot_project_api.dto.response.UserSummaryResponse;
 import com.example.spring_boot_project_api.dto.response.UserTenantCandidateResponse;
 import com.example.spring_boot_project_api.exception.UserNotFoundException;
 import com.example.spring_boot_project_api.mapper.UserMapper;
 import com.example.spring_boot_project_api.model.User;
+import com.example.spring_boot_project_api.model.UserStatus;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.UserService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
@@ -34,6 +38,9 @@ public class UserServiceImpl implements UserService, UserDetailsService {
 
     /** Hard cap on how many rows can be requested for the tenant-linking search. */
     private static final int MAX_TENANT_SEARCH_SIZE = 50;
+
+    /** Hard cap on how many rows can be requested for the user list. */
+    private static final int MAX_LIST_SIZE = 200;
 
     private final UserRepository userRepository;
     private final UserMapper userMapper;
@@ -71,11 +78,33 @@ public class UserServiceImpl implements UserService, UserDetailsService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserResponse> getAllUsers() {
+    public PageResponse<UserResponse> getAllUsers(String search, UserStatus status, Pageable pageable) {
         requireOwner();
-        return userRepository.findAll().stream()
+        Pageable capped = PageRequest.of(pageable.getPageNumber(),
+                Math.min(pageable.getPageSize(), MAX_LIST_SIZE),
+                pageable.getSort());
+        Page<User> page = userRepository.findAllWithFilters(normalize(search), status, capped);
+        List<UserResponse> content = page.getContent().stream()
                 .map(userMapper::toResponse)
                 .toList();
+        return PageResponse.of(content, page.getNumber(), page.getSize(),
+                page.getTotalElements(), page.getTotalPages());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public UserSummaryResponse getUsersSummary() {
+        requireOwner();
+        List<Object[]> rows = userRepository.countGroupedByStatus();
+        Map<String, Long> counts = new LinkedHashMap<>();
+        long total = 0L;
+        for (Object[] row : rows) {
+            String status = row[0].toString();
+            long cnt = ((Number) row[1]).longValue();
+            counts.put(status, cnt);
+            total += cnt;
+        }
+        return new UserSummaryResponse(total, counts);
     }
 
     @Override

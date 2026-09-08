@@ -7,7 +7,10 @@ import java.util.Optional;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -16,7 +19,11 @@ import com.example.spring_boot_project_api.enums.RentalContractStatus;
 import com.example.spring_boot_project_api.model.Tenant;
 
 @Repository
-public interface TenantRepository extends JpaRepository<Tenant, Long> {
+public interface TenantRepository extends JpaRepository<Tenant, Long>, JpaSpecificationExecutor<Tenant> {
+
+    @Override
+    @EntityGraph(attributePaths = {"user", "owner", "house", "invitedBy"})
+    Page<Tenant> findAll(Specification<Tenant> spec, Pageable pageable);
 
     Optional<Tenant> findByIdAndOwnerId(Long id, Long ownerId);
 
@@ -87,4 +94,23 @@ public interface TenantRepository extends JpaRepository<Tenant, Long> {
             "OR (t.owner.id = :managerId AND t.invitedBy IS NULL) " +
             "ORDER BY t.createdAt DESC")
     List<Tenant> findAllVisibleToManagerOrderByCreatedAtDesc(@Param("managerId") Long managerId);
+
+    // ---- Summary group-by queries ----
+
+    @Query("SELECT t.status AS status, COUNT(t) AS cnt FROM Tenant t " +
+            "WHERE t.owner.id = :ownerId GROUP BY t.status")
+    java.util.List<Object[]> countGroupByOwnerId(@Param("ownerId") Long ownerId);
+
+    @Query("SELECT t.status AS status, COUNT(t) AS cnt FROM Tenant t " +
+            "WHERE t.house.id IN :houseIds GROUP BY t.status")
+    java.util.List<Object[]> countGroupByHouseIds(@Param("houseIds") Collection<Long> houseIds);
+
+    @Query("SELECT COUNT(DISTINCT t.id) FROM Tenant t, ContractTenant ct, RentalContract rc, Room r " +
+            "WHERE t.id = ct.tenantId AND ct.contractId = rc.id AND rc.roomId = r.id " +
+            "AND r.houseId IN :houseIds " +
+            "AND rc.status = com.example.spring_boot_project_api.enums.RentalContractStatus.ACTIVE " +
+            "AND ct.joinedAt <= :currentDate " +
+            "AND (ct.leftAt IS NULL OR ct.leftAt >= :currentDate)")
+    long countActiveTenantsByHouseIds(@Param("houseIds") Collection<Long> houseIds,
+            @Param("currentDate") LocalDate currentDate);
 }

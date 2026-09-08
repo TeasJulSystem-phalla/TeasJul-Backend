@@ -5,8 +5,12 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,6 +55,7 @@ import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.TenantRepository;
 import com.example.spring_boot_project_api.service.HouseAccessService;
+import com.example.spring_boot_project_api.service.NotificationService;
 import com.example.spring_boot_project_api.service.PayWayService;
 import com.example.spring_boot_project_api.service.PaymentService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
@@ -89,6 +94,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final RoomRepository roomRepository;
     private final HouseRepository houseRepository;
     private final TenantRepository tenantRepository;
+    private final NotificationService notificationService;
 
     @Override
     @Transactional
@@ -133,12 +139,22 @@ public class PaymentServiceImpl implements PaymentService {
             Payment updatedPayment = paymentRepository.save(savedPayment);
 
             log.info("PayWay QR generated: paymentId={}, tranId={}", updatedPayment.getId(), transactionId);
+            try {
+                notificationService.notifyPaymentCreated(updatedPayment);
+            } catch (RuntimeException e) {
+                log.warn("Failed to create payment-created notification", e);
+            }
             return paymentMapper.toResponse(updatedPayment);
 
         } catch (PayWayIntegrationException e) {
             savedPayment.setStatus(PaymentStatus.FAILED);
             paymentRepository.save(savedPayment);
             log.error("PayWay QR generation failed for payment: id={}, tranId={}", savedPayment.getId(), transactionId);
+            try {
+                notificationService.notifyPaymentFailed(savedPayment);
+            } catch (RuntimeException ne) {
+                log.warn("Failed to create payment-failed notification", ne);
+            }
             throw e;
         }
     }
@@ -190,6 +206,12 @@ public class PaymentServiceImpl implements PaymentService {
         Payment savedPayment = paymentRepository.save(payment);
         log.info("Recorded manual payment: paymentId={}, paymentNo={}, invoiceId={}, amount={}, method={}",
                 savedPayment.getId(), paymentNo, invoice.getId(), amount, paymentMethod.getName());
+
+        try {
+            notificationService.notifyPaymentSuccess(savedPayment);
+        } catch (RuntimeException e) {
+            log.warn("Failed to create payment-success notification", e);
+        }
 
         updateInvoiceStatus(invoice.getId());
 
@@ -310,15 +332,71 @@ public class PaymentServiceImpl implements PaymentService {
 
         Page<Payment> page = paymentRepository.findAll(spec, pageable);
 
-        List<PaymentListResponse> content = page.getContent().stream()
-                .map(this::toListResponse)
-                .toList();
+        List<PaymentListResponse> content = toListResponses(page.getContent());
 
         return PageResponse.of(content, page.getNumber(), page.getSize(),
                 page.getTotalElements(), page.getTotalPages());
     }
 
-    private PaymentListResponse toListResponse(Payment payment) {
+    private List<PaymentListResponse> toListResponses(List<Payment> payments) {
+        if (payments == null || payments.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> invoiceIds = payments.stream()
+                .map(Payment::getInvoiceId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, Invoice> invoices = invoiceIds.isEmpty() ? Map.of()
+                : invoiceRepository.findAllById(invoiceIds).stream()
+                        .collect(Collectors.toMap(Invoice::getId, i -> i));
+
+        List<Long> contractIds = invoices.values().stream()
+                .map(Invoice::getContractId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, RentalContract> contracts = contractIds.isEmpty() ? Map.of()
+                : rentalContractRepository.findAllById(contractIds).stream()
+                        .collect(Collectors.toMap(RentalContract::getId, c -> c));
+
+        List<Long> roomIds = contracts.values().stream()
+                .map(RentalContract::getRoomId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, Room> rooms = roomIds.isEmpty() ? Map.of()
+                : roomRepository.findAllById(roomIds).stream()
+                        .collect(Collectors.toMap(Room::getId, r -> r));
+
+        List<Long> houseIds = rooms.values().stream()
+                .map(Room::getHouseId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, House> houses = houseIds.isEmpty() ? Map.of()
+                : houseRepository.findAllById(houseIds).stream()
+                        .collect(Collectors.toMap(House::getId, h -> h));
+
+        Map<Long, ContractTenant> primaryLinks = primaryTenantLinks(contractIds);
+        List<Long> tenantIds = primaryLinks.values().stream()
+                .map(ContractTenant::getTenantId)
+                .distinct()
+                .toList();
+        Map<Long, Tenant> tenants = tenantIds.isEmpty() ? Map.of()
+                : tenantRepository.findAllById(tenantIds).stream()
+                        .collect(Collectors.toMap(Tenant::getId, t -> t));
+
+        return payments.stream()
+                .map(p -> toListResponse(p, invoices, contracts, rooms, houses, primaryLinks, tenants))
+                .toList();
+    }
+
+    private PaymentListResponse toListResponse(Payment payment,
+            Map<Long, Invoice> invoices, Map<Long, RentalContract> contracts,
+            Map<Long, Room> rooms, Map<Long, House> houses,
+            Map<Long, ContractTenant> primaryLinks, Map<Long, Tenant> tenants) {
         Long houseId = null;
         String houseName = null;
         String roomNumber = null;
@@ -326,23 +404,22 @@ public class PaymentServiceImpl implements PaymentService {
         Long tenantId = null;
         String tenantName = null;
 
-        Invoice invoice = payment.getInvoiceId() != null
-                ? invoiceRepository.findById(payment.getInvoiceId()).orElse(null)
-                : null;
+        Invoice invoice = invoices.get(payment.getInvoiceId());
         if (invoice != null) {
             invoiceNo = invoice.getInvoiceNo();
-            RentalContract contract = rentalContractRepository.findById(invoice.getContractId()).orElse(null);
+            RentalContract contract = contracts.get(invoice.getContractId());
             if (contract != null) {
-                Room room = roomRepository.findById(contract.getRoomId()).orElse(null);
+                Room room = rooms.get(contract.getRoomId());
                 if (room != null) {
                     houseId = room.getHouseId();
                     roomNumber = room.getRoomNumber();
-                    House house = houseRepository.findById(room.getHouseId()).orElse(null);
+                    House house = houses.get(room.getHouseId());
                     if (house != null) {
                         houseName = house.getName();
                     }
                 }
-                Tenant tenant = primaryTenantOf(invoice.getContractId());
+                ContractTenant link = primaryLinks.get(contract.getId());
+                Tenant tenant = link != null ? tenants.get(link.getTenantId()) : null;
                 if (tenant != null) {
                     tenantId = tenant.getId();
                     String first = tenant.getFirstName() != null ? tenant.getFirstName() : "";
@@ -377,22 +454,28 @@ public class PaymentServiceImpl implements PaymentService {
                 payment.getCreatedAt());
     }
 
-    private Tenant primaryTenantOf(Long contractId) {
-        List<ContractTenant> links = contractTenantRepository.findByContractId(contractId);
-        ContractTenant chosen = null;
-        for (ContractTenant link : links) {
-            if (Boolean.TRUE.equals(link.getIsPrimary())) {
-                chosen = link;
-                break;
+    private Map<Long, ContractTenant> primaryTenantLinks(List<Long> contractIds) {
+        if (contractIds == null || contractIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, List<ContractTenant>> linksByContract = contractTenantRepository
+                .findByContractIdIn(List.copyOf(contractIds)).stream()
+                .collect(Collectors.groupingBy(ContractTenant::getContractId));
+
+        Map<Long, ContractTenant> result = new HashMap<>();
+        for (Map.Entry<Long, List<ContractTenant>> entry : linksByContract.entrySet()) {
+            ContractTenant chosen = entry.getValue().stream()
+                    .filter(l -> Boolean.TRUE.equals(l.getIsPrimary()))
+                    .findFirst()
+                    .orElseGet(() -> entry.getValue().stream()
+                            .min(Comparator.comparing(ContractTenant::getJoinedAt)
+                                    .thenComparing(ContractTenant::getId))
+                            .orElse(null));
+            if (chosen != null) {
+                result.put(entry.getKey(), chosen);
             }
         }
-        if (chosen == null && !links.isEmpty()) {
-            chosen = links.stream()
-                    .min((a, b) -> a.getJoinedAt().compareTo(b.getJoinedAt()))
-                    .orElse(null);
-        }
-        if (chosen == null) return null;
-        return tenantRepository.findById(chosen.getTenantId()).orElse(null);
+        return result;
     }
 
     private PaymentStatusResponse toStatusResponse(Payment payment) {
@@ -460,6 +543,11 @@ public class PaymentServiceImpl implements PaymentService {
             paymentRepository.save(payment);
             log.warn("Payment not approved by ABA: paymentId={}, tranId={}, status={}",
                     payment.getId(), tranId, txData.paymentStatus());
+            try {
+                notificationService.notifyPaymentFailed(payment);
+            } catch (RuntimeException e) {
+                log.warn("Failed to create payment-failed notification", e);
+            }
             return;
         }
 
@@ -469,6 +557,12 @@ public class PaymentServiceImpl implements PaymentService {
 
         log.info("ABA confirmed payment: paymentId={}, tranId={}, amount={}, currency={}",
                 payment.getId(), tranId, payment.getAmount(), payment.getCurrency());
+
+        try {
+            notificationService.notifyPaymentSuccess(payment);
+        } catch (RuntimeException e) {
+            log.warn("Failed to create payment-success notification", e);
+        }
 
         updateInvoiceStatus(payment.getInvoiceId());
     }

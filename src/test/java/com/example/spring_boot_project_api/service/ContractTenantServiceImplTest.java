@@ -54,6 +54,8 @@ class ContractTenantServiceImplTest {
     private SecurityUtils securityUtils;
     @Mock
     private HouseAccessService houseAccessService;
+    @Mock
+    private NotificationService notificationService;
 
     @InjectMocks
     private ContractTenantServiceImpl contractTenantService;

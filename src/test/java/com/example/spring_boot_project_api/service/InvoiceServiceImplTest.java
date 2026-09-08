@@ -83,6 +83,7 @@ class InvoiceServiceImplTest {
     @Mock private UserRepository userRepository;
     @Mock private UserHouseAccessRepository userHouseAccessRepository;
     @Mock private SecurityUtils securityUtils;
+    @Mock private NotificationService notificationService;
 
     @InjectMocks private InvoiceServiceImpl invoiceService;
 

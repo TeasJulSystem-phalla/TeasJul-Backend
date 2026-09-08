@@ -1,6 +1,9 @@
 package com.example.spring_boot_project_api.service.impl;
 
 import com.example.spring_boot_project_api.dto.request.RentalContractRequest;
+import com.example.spring_boot_project_api.dto.response.ContractSummaryResponse;
+import com.example.spring_boot_project_api.dto.response.ExpiringContractSummary;
+import com.example.spring_boot_project_api.dto.response.PageResponse;
 import com.example.spring_boot_project_api.dto.response.RentalContractResponse;
 import com.example.spring_boot_project_api.enums.RentalContractStatus;
 import com.example.spring_boot_project_api.enums.RoomStatus;
@@ -14,25 +17,40 @@ import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.service.RentalContractService;
+import com.example.spring_boot_project_api.service.NotificationService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Collections;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class RentalContractServiceImpl implements RentalContractService {
+    private static final Logger log = LoggerFactory.getLogger(RentalContractServiceImpl.class);
+
+    private static final int MAX_LIST_SIZE = 200;
+    private static final int MAX_EXPIRING_SOON = 20;
+
     private final RentalContractRepository contractRepository;
     private final RoomRepository roomRepository;
     private final UserHouseAccessRepository userHouseAccessRepository;
     private final RentalContractMapper contractMapper;
     private final SecurityUtils securityUtils;
+    private final NotificationService notificationService;
 
     @Override
     public RentalContractResponse createContract(RentalContractRequest request) {
@@ -53,6 +71,11 @@ public class RentalContractServiceImpl implements RentalContractService {
         RentalContract contract = contractMapper.toEntity(request);
         contract.setOwnerId(ownerId);
         RentalContract savedContract = contractRepository.save(contract);
+        try {
+            notificationService.notifyContractExpiring(savedContract);
+        } catch (RuntimeException e) {
+            log.warn("Failed to create contract-expiry notification", e);
+        }
         syncRoomStatus(savedContract.getRoomId());
         return contractMapper.toResponse(savedContract);
     }
@@ -65,12 +88,32 @@ public class RentalContractServiceImpl implements RentalContractService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<RentalContractResponse> getContractsByOwner(Long ownerId) {
+    public PageResponse<RentalContractResponse> getContractsByOwner(Long ownerId, String search,
+            RentalContractStatus status, Pageable pageable) {
         Long currentUserId = securityUtils.getCurrentUserId();
-        List<RentalContract> contracts = getScopedContracts(currentUserId, null);
-        return contracts.stream()
+        boolean manager = securityUtils.hasRole(SecurityUtils.ROLE_MANAGER);
+
+        Pageable capped = PageRequest.of(pageable.getPageNumber(),
+                Math.min(pageable.getPageSize(), MAX_LIST_SIZE),
+                pageable.getSort());
+        String q = normalize(search);
+
+        Page<RentalContract> page;
+        if (manager) {
+            List<Long> houseIds = userHouseAccessRepository.findHouseIdsByUserId(currentUserId);
+            if (houseIds.isEmpty()) {
+                return PageResponse.of(List.of(), pageable.getPageNumber(), pageable.getPageSize(), 0L, 0);
+            }
+            page = contractRepository.findScopedByHouseIds(houseIds, q, status, capped);
+        } else {
+            page = contractRepository.findScopedByOwnerId(currentUserId, q, status, capped);
+        }
+
+        List<RentalContractResponse> content = page.getContent().stream()
                 .map(contractMapper::toResponse)
                 .toList();
+        return PageResponse.of(content, page.getNumber(), page.getSize(),
+                page.getTotalElements(), page.getTotalPages());
     }
 
     @Override
@@ -86,12 +129,47 @@ public class RentalContractServiceImpl implements RentalContractService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<RentalContractResponse> getContractsByStatus(RentalContractStatus status) {
+    public PageResponse<RentalContractResponse> getContractsByStatus(RentalContractStatus status, Pageable pageable) {
+        return getContractsByOwner(null, null, status, pageable);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ContractSummaryResponse getContractsSummary() {
         Long currentUserId = securityUtils.getCurrentUserId();
-        List<RentalContract> contracts = getScopedContracts(currentUserId, status);
-        return contracts.stream()
-                .map(contractMapper::toResponse)
-                .toList();
+        boolean manager = securityUtils.hasRole(SecurityUtils.ROLE_MANAGER);
+
+        Map<String, Long> statusCounts = new LinkedHashMap<>();
+        long total = 0L;
+        BigDecimal activeMonthlyRent = BigDecimal.ZERO;
+        List<ExpiringContractSummary> expiring;
+        LocalDate today = LocalDate.now();
+        LocalDate windowEnd = today.plusDays(60);
+        PageRequest expiringPage = PageRequest.of(0, MAX_EXPIRING_SOON);
+
+        if (manager) {
+            List<Long> houseIds = userHouseAccessRepository.findHouseIdsByUserId(currentUserId);
+            if (houseIds.isEmpty()) {
+                return new ContractSummaryResponse(0L, Map.of(), BigDecimal.ZERO, List.of());
+            }
+            for (Object[] row : contractRepository.countGroupByHouseIds(houseIds)) {
+                statusCounts.put(row[0].toString(), ((Number) row[1]).longValue());
+            }
+            long sCount = 0L;
+            for (long v : statusCounts.values()) sCount += v;
+            total = sCount;
+            activeMonthlyRent = contractRepository.sumActiveMonthlyRentByHouseIds(houseIds);
+            expiring = contractRepository.findExpiringSoonByHouseIds(houseIds, today, windowEnd, expiringPage);
+        } else {
+            for (Object[] row : contractRepository.countGroupByOwnerId(currentUserId)) {
+                statusCounts.put(row[0].toString(), ((Number) row[1]).longValue());
+            }
+            for (long v : statusCounts.values()) total += v;
+            activeMonthlyRent = contractRepository.sumActiveMonthlyRentByOwnerId(currentUserId);
+            expiring = contractRepository.findExpiringSoonByOwnerId(currentUserId, today, windowEnd, expiringPage);
+        }
+
+        return new ContractSummaryResponse(total, statusCounts, activeMonthlyRent, expiring);
     }
 
     @Override
@@ -120,6 +198,11 @@ public class RentalContractServiceImpl implements RentalContractService {
         contractMapper.updateEntityFromDto(request, existingContract);
         existingContract.setOwnerId(ownerId);
         RentalContract updatedContract = contractRepository.save(existingContract);
+        try {
+            notificationService.notifyContractExpiring(updatedContract);
+        } catch (RuntimeException e) {
+            log.warn("Failed to create contract-expiry notification", e);
+        }
         syncRoomStatus(prevRoomId);
         if (!prevRoomId.equals(updatedContract.getRoomId())) {
             syncRoomStatus(updatedContract.getRoomId());
@@ -189,20 +272,7 @@ public class RentalContractServiceImpl implements RentalContractService {
                         && userHouseAccessRepository.existsByUserIdAndHouseId(currentUserId, houseId));
     }
 
-    private List<RentalContract> getScopedContracts(Long currentUserId, RentalContractStatus status) {
-        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
-            List<Long> assignedHouseIds = userHouseAccessRepository.findHouseIdsByUserId(currentUserId);
-            if (assignedHouseIds.isEmpty()) {
-                return Collections.emptyList();
-            }
-            if (status != null) {
-                return contractRepository.findByRoomHouseIdInAndStatus(assignedHouseIds, status);
-            }
-            return contractRepository.findByRoomHouseIdIn(assignedHouseIds);
-        }
-        if (status != null) {
-            return contractRepository.findByOwnerIdAndStatus(currentUserId, status);
-        }
-        return contractRepository.findByOwnerId(currentUserId);
+    private static String normalize(String q) {
+        return q == null ? null : q.trim();
     }
 }

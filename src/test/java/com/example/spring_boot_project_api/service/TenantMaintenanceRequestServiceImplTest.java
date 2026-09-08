@@ -70,6 +70,8 @@ class TenantMaintenanceRequestServiceImplTest {
     private MaintenanceRequestMapper requestMapper = new MaintenanceRequestMapper();
     @Mock
     private TenantContextResolver tenantContextResolver;
+    @Mock
+    private NotificationService notificationService;
 
     @InjectMocks
     private MaintenanceRequestServiceImpl maintenanceRequestService;

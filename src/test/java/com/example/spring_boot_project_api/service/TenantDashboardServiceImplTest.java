@@ -196,7 +196,7 @@ class TenantDashboardServiceImplTest {
         when(houseRepository.findById(8L)).thenReturn(Optional.of(house()));
 
         Invoice unpaid = invoice(10L, 2026, 9, "100.00", InvoiceStatus.PENDING,
-                LocalDate.of(2026, 9, 5));
+                LocalDate.now().plusDays(30));
         when(invoiceRepository.findByContractIdInAndStatusIn(eq(List.of(100L)), anyList()))
                 .thenReturn(List.of(unpaid));
         when(invoiceRepository.countByContractIdInAndStatus(List.of(100L), InvoiceStatus.PAID))
@@ -224,7 +224,7 @@ class TenantDashboardServiceImplTest {
         when(houseRepository.findById(8L)).thenReturn(Optional.of(house()));
 
         Invoice unpaid = invoice(10L, 2026, 9, "100.00", InvoiceStatus.PARTIAL,
-                LocalDate.of(2026, 9, 5));
+                LocalDate.now().plusDays(30));
         when(invoiceRepository.findByContractIdInAndStatusIn(eq(List.of(100L)), anyList()))
                 .thenReturn(List.of(unpaid));
         when(invoiceRepository.countByContractIdInAndStatus(List.of(100L), InvoiceStatus.PAID))

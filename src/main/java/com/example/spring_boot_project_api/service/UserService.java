@@ -1,14 +1,14 @@
 package com.example.spring_boot_project_api.service;
 
-import java.util.List;
-
 import org.springframework.data.domain.Pageable;
 
 import com.example.spring_boot_project_api.dto.request.UpdateUserRequest;
 import com.example.spring_boot_project_api.dto.response.PageResponse;
 import com.example.spring_boot_project_api.dto.response.UserResponse;
+import com.example.spring_boot_project_api.dto.response.UserSummaryResponse;
 import com.example.spring_boot_project_api.dto.response.UserTenantCandidateResponse;
 import com.example.spring_boot_project_api.model.User;
+import com.example.spring_boot_project_api.model.UserStatus;
 
 public interface UserService {
 
@@ -18,7 +18,9 @@ public interface UserService {
 
     UserResponse getCurrentUser();
 
-    List<UserResponse> getAllUsers();
+    PageResponse<UserResponse> getAllUsers(String search, UserStatus status, Pageable pageable);
+
+    UserSummaryResponse getUsersSummary();
 
     UserResponse updateUser(Long id, UpdateUserRequest request);
 

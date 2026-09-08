@@ -90,6 +90,7 @@ class PaymentServiceImplTest {
     @Mock private RoomRepository roomRepository;
     @Mock private HouseRepository houseRepository;
     @Mock private TenantRepository tenantRepository;
+    @Mock private NotificationService notificationService;
 
     @InjectMocks private PaymentServiceImpl paymentService;
 
@@ -986,26 +987,26 @@ class PaymentServiceImplTest {
         when(paymentRepository.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(paidPayment), pageable, 1));
 
-        when(invoiceRepository.findById(10L)).thenReturn(Optional.of(invoice));
+        when(invoiceRepository.findAllById(List.of(10L))).thenReturn(List.of(invoice));
 
         RentalContract contract = RentalContract.builder().id(100L).roomId(300L).build();
-        when(rentalContractRepository.findById(100L)).thenReturn(Optional.of(contract));
+        when(rentalContractRepository.findAllById(List.of(100L))).thenReturn(List.of(contract));
 
         Room room = new Room();
         room.setId(300L);
         room.setHouseId(400L);
         room.setRoomNumber("A101");
-        when(roomRepository.findById(300L)).thenReturn(Optional.of(room));
+        when(roomRepository.findAllById(List.of(300L))).thenReturn(List.of(room));
 
         House house = House.builder().id(400L).name("Orange Villa").build();
-        when(houseRepository.findById(400L)).thenReturn(Optional.of(house));
+        when(houseRepository.findAllById(List.of(400L))).thenReturn(List.of(house));
 
         ContractTenant link = ContractTenant.builder()
                 .id(1L).contractId(100L).tenantId(500L).isPrimary(true).build();
-        when(contractTenantRepository.findByContractId(100L)).thenReturn(List.of(link));
+        when(contractTenantRepository.findByContractIdIn(List.of(100L))).thenReturn(List.of(link));
 
         Tenant tenant = Tenant.builder().id(500L).firstName("Sok").lastName("Dara").build();
-        when(tenantRepository.findById(500L)).thenReturn(Optional.of(tenant));
+        when(tenantRepository.findAllById(List.of(500L))).thenReturn(List.of(tenant));
 
         var page = paymentService.getPayments(null, null, null, null, pageable);
 
