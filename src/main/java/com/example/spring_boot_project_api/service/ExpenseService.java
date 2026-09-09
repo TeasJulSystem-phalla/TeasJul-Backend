@@ -2,7 +2,7 @@ package com.example.spring_boot_project_api.service;
 
 import java.util.List;
 
-import org.springdoc.core.converters.models.Pageable;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Page;
 
 import com.example.spring_boot_project_api.dto.request.ExpenseRequest;

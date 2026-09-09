@@ -2,8 +2,8 @@ package com.example.spring_boot_project_api.service.impl;
 
 import java.util.List;
 
-import org.springdoc.core.converters.models.Pageable;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -74,7 +74,7 @@ public class ExpenseServiceImpl implements ExpenseService {
                     .orElseThrow(() -> new EntityNotFoundException("Creator user not found with ID: " + request.createdById()));
         }
 
-        Expense entity = mapper.toEntity(request, owner, house, category,null, createdBy);
+        Expense entity = mapper.toEntity(request, owner, house, category, createdBy);
         Expense savedEntity = expenseRepository.save(entity);
         return mapper.toResponse(savedEntity);
     }

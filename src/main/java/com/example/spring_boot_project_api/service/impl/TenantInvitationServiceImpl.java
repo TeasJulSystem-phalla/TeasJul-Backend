@@ -155,7 +155,7 @@ public class TenantInvitationServiceImpl implements TenantInvitationService {
                 break;
         }
 
-        if (invitation.getEmail() != null
+if (invitation.getEmail() != null
                 && !invitation.getEmail().equalsIgnoreCase(request.email().trim())) {
             throw new InvitationEmailMismatchException(
                     "The email you entered does not match the invited email");

@@ -24,12 +24,16 @@ import com.example.spring_boot_project_api.dto.request.RegisterRequest;
 import com.example.spring_boot_project_api.dto.response.LoginResponse;
 import com.example.spring_boot_project_api.dto.response.UserResponse;
 import com.example.spring_boot_project_api.exception.DuplicateResourceException;
+import com.example.spring_boot_project_api.exception.InvalidEmailException;
 import com.example.spring_boot_project_api.mapper.UserMapper;
 import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.model.UserStatus;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.impl.AuthServiceImpl;
+import com.example.spring_boot_project_api.service.impl.SecurityServiceImpl;
 import com.example.spring_boot_project_api.util.JwtUtil;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 @ExtendWith(MockitoExtension.class)
 class AuthServiceImplTest {
@@ -49,6 +53,12 @@ class AuthServiceImplTest {
     @Mock
     private JwtUtil jwtUtil;
 
+    @Mock
+    private SecurityServiceImpl securityService;
+
+    @Mock
+    private HttpServletRequest httpServletRequest;
+
     @Spy
     private UserMapper userMapper = new UserMapper();
 
@@ -56,7 +66,12 @@ class AuthServiceImplTest {
     private AuthServiceImpl authService;
 
     private RegisterRequest registerRequest() {
-        return new RegisterRequest("johndoe", "john@example.com", RAW_PASSWORD,
+        return new RegisterRequest("johndoe", "john@rental.com", RAW_PASSWORD,
+                "John", "Doe", "+1234567890");
+    }
+
+    private RegisterRequest registerRequestExternalEmail() {
+        return new RegisterRequest("johndoe", "john@gmail.com", RAW_PASSWORD,
                 "John", "Doe", "+1234567890");
     }
 
@@ -64,7 +79,7 @@ class AuthServiceImplTest {
         return User.builder()
                 .id(1L)
                 .username("johndoe")
-                .email("john@example.com")
+                .email("john@rental.com")
                 .passwordHash(HASHED_PASSWORD)
                 .firstName("John")
                 .lastName("Doe")
@@ -79,7 +94,7 @@ class AuthServiceImplTest {
     void registerShouldEncodePasswordAndReturnCreatedUser() {
         RegisterRequest request = registerRequest();
         when(userRepository.existsByUsername("johndoe")).thenReturn(false);
-        when(userRepository.existsByEmail("john@example.com")).thenReturn(false);
+        when(userRepository.existsByEmail("john@rental.com")).thenReturn(false);
         when(passwordEncoder.encode(RAW_PASSWORD)).thenReturn(HASHED_PASSWORD);
         when(userService.createUser(any(User.class))).thenReturn(savedUser());
 
@@ -87,7 +102,7 @@ class AuthServiceImplTest {
 
         assertThat(response.id()).isEqualTo(1L);
         assertThat(response.username()).isEqualTo("johndoe");
-        assertThat(response.email()).isEqualTo("john@example.com");
+        assertThat(response.email()).isEqualTo("john@rental.com");
         assertThat(response.status()).isEqualTo(UserStatus.ACTIVE);
 
         verify(passwordEncoder).encode(RAW_PASSWORD);
@@ -106,11 +121,21 @@ class AuthServiceImplTest {
     @Test
     void registerShouldRejectDuplicateEmail() {
         when(userRepository.existsByUsername("johndoe")).thenReturn(false);
-        when(userRepository.existsByEmail("john@example.com")).thenReturn(true);
+        when(userRepository.existsByEmail("john@rental.com")).thenReturn(true);
 
         assertThatThrownBy(() -> authService.register(registerRequest()))
                 .isInstanceOf(DuplicateResourceException.class)
                 .hasMessageContaining("Email is already registered");
+    }
+
+    @Test
+    void registerShouldRejectInternalUserWithExternalEmail() {
+        when(userRepository.existsByUsername("johndoe")).thenReturn(false);
+        when(userRepository.existsByEmail("john@gmail.com")).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.register(registerRequestExternalEmail()))
+                .isInstanceOf(InvalidEmailException.class)
+                .hasMessageContaining("@rental.com");
     }
 
     @Test
@@ -119,11 +144,12 @@ class AuthServiceImplTest {
         User user = savedUser();
         when(userRepository.findByUsername("johndoe")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches(RAW_PASSWORD, HASHED_PASSWORD)).thenReturn(true);
+        when(securityService.requiresTwoFactor(any(User.class))).thenReturn(false);
         when(jwtUtil.generateToken("johndoe")).thenReturn("jwt-token-value");
         when(jwtUtil.getExpirationMs()).thenReturn(900000L);
         when(userService.createUser(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        LoginResponse response = authService.login(request);
+        LoginResponse response = (LoginResponse) authService.login(request, httpServletRequest);
 
         assertThat(response.token()).isEqualTo("jwt-token-value");
         assertThat(response.tokenType()).isEqualTo("Bearer");
@@ -141,11 +167,12 @@ class AuthServiceImplTest {
         when(userRepository.findByUsername("john@example.com")).thenReturn(Optional.empty());
         when(userRepository.findByEmail("john@example.com")).thenReturn(Optional.of(savedUser()));
         when(passwordEncoder.matches(RAW_PASSWORD, HASHED_PASSWORD)).thenReturn(true);
+        when(securityService.requiresTwoFactor(any(User.class))).thenReturn(false);
         when(jwtUtil.generateToken("johndoe")).thenReturn("jwt-token-value");
         when(jwtUtil.getExpirationMs()).thenReturn(900000L);
         when(userService.createUser(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        LoginResponse response = authService.login(request);
+        LoginResponse response = (LoginResponse) authService.login(request, httpServletRequest);
 
         assertThat(response.token()).isEqualTo("jwt-token-value");
     }
@@ -156,7 +183,7 @@ class AuthServiceImplTest {
         when(userRepository.findByUsername("johndoe")).thenReturn(Optional.of(savedUser()));
         when(passwordEncoder.matches("WrongPassword1", HASHED_PASSWORD)).thenReturn(false);
 
-        assertThatThrownBy(() -> authService.login(request))
+        assertThatThrownBy(() -> authService.login(request, httpServletRequest))
                 .isInstanceOf(BadCredentialsException.class)
                 .hasMessageContaining("Invalid username or password");
     }
@@ -167,7 +194,7 @@ class AuthServiceImplTest {
         when(userRepository.findByUsername("ghost")).thenReturn(Optional.empty());
         when(userRepository.findByEmail("ghost")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> authService.login(request))
+        assertThatThrownBy(() -> authService.login(request, httpServletRequest))
                 .isInstanceOf(BadCredentialsException.class);
     }
 }

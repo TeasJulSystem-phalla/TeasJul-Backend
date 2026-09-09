@@ -56,7 +56,13 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/auth/register", "/api/v1/auth/login").permitAll()
+                        .requestMatchers(
+                                "/api/v1/auth/register",
+                                "/api/v1/auth/login",
+                                "/api/v1/auth/2fa/verify",
+                                "/api/v1/auth/forgot-password",
+                                "/api/v1/auth/forgot-password/verify-otp",
+                                "/api/v1/auth/reset-password").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/payments/callback").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/tenant-invitations/validate").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/tenant-invitations/consume").permitAll()

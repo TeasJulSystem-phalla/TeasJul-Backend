@@ -24,6 +24,7 @@ import com.example.spring_boot_project_api.dto.response.UserResponse;
 import com.example.spring_boot_project_api.exception.DuplicateResourceException;
 import com.example.spring_boot_project_api.model.UserStatus;
 import com.example.spring_boot_project_api.service.AuthService;
+import com.example.spring_boot_project_api.service.SecurityService;
 import com.example.spring_boot_project_api.util.JwtUtil;
 
 @WebMvcTest(AuthController.class)
@@ -39,6 +40,9 @@ class AuthControllerTest {
 
     @MockitoBean
     private AuthService authService;
+
+    @MockitoBean
+    private SecurityService securityService;
 
     @MockitoBean
     private UserDetailsService userDetailsService;
@@ -132,7 +136,7 @@ class AuthControllerTest {
 
     @Test
     void loginShouldReturnToken() throws Exception {
-        when(authService.login(any())).thenReturn(
+        when(authService.login(any(), any())).thenReturn(
                 new LoginResponse("jwt-token-value", "Bearer", 900000L, sampleUser()));
 
         mockMvc.perform(post("/api/v1/auth/login")
@@ -152,7 +156,7 @@ class AuthControllerTest {
 
     @Test
     void loginShouldReturnUnauthorizedForInvalidCredentials() throws Exception {
-        when(authService.login(any()))
+        when(authService.login(any(), any()))
                 .thenThrow(new BadCredentialsException("Invalid username or password"));
 
         mockMvc.perform(post("/api/v1/auth/login")

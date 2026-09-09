@@ -124,13 +124,13 @@ class TenantInvitationServiceImplTest {
         });
 
         TenantInvitationCreateResponse response = tenantInvitationService
-                .createInvitation(new CreateTenantInvitationRequest(10L, "vannak@example.com"));
+                .createInvitation(new CreateTenantInvitationRequest(10L, "vannak@rental.com"));
 
         assertThat(response.id()).isEqualTo(99L);
         assertThat(response.token()).isNotBlank();
         assertThat(response.invitationPath()).contains(response.token());
         assertThat(response.houseId()).isEqualTo(10L);
-        assertThat(response.email()).isEqualTo("vannak@example.com");
+        assertThat(response.email()).isEqualTo("vannak@rental.com");
         assertThat(response.status()).isEqualTo(TenantInvitationStatus.PENDING);
         assertThat(response.expiresAt()).isAfter(LocalDateTime.now());
 
@@ -156,7 +156,7 @@ class TenantInvitationServiceImplTest {
         when(tenantInvitationRepository.save(any(TenantInvitation.class))).thenAnswer(inv -> inv.getArgument(0));
 
         TenantInvitationCreateResponse response = tenantInvitationService
-                .createInvitation(new CreateTenantInvitationRequest(10L, null));
+                .createInvitation(new CreateTenantInvitationRequest(10L, "vannak@rental.com"));
 
         assertThat(response).isNotNull();
         verify(tenantInvitationRepository).save(any(TenantInvitation.class));
@@ -196,7 +196,7 @@ class TenantInvitationServiceImplTest {
     void validateReturnsValidForPendingInvitation() {
         User manager = user(1L, "managerA");
         House house = house(10L, manager);
-        TenantInvitation invitation = invitation(5L, manager, house, "vannak@example.com",
+        TenantInvitation invitation = invitation(5L, manager, house, "vannak@rental.com",
                 TenantInvitationStatus.PENDING, LocalDateTime.now().plusMinutes(5));
         when(tenantInvitationRepository.findByTokenHash(InvitationTokenUtil.hashToken("rawtoken")))
                 .thenReturn(Optional.of(invitation));
@@ -205,7 +205,7 @@ class TenantInvitationServiceImplTest {
 
         assertThat(response.valid()).isTrue();
         assertThat(response.reason()).isEqualTo("VALID");
-        assertThat(response.email()).isEqualTo("vannak@example.com");
+        assertThat(response.email()).isEqualTo("vannak@rental.com");
         assertThat(response.houseName()).isEqualTo("Golden House");
         assertThat(response.expiresAt()).isNotNull();
     }
@@ -224,7 +224,7 @@ class TenantInvitationServiceImplTest {
     void validateReturnsExpiredForExpiredPendingInvitation() {
         User manager = user(1L, "managerA");
         House house = house(10L, manager);
-        TenantInvitation invitation = invitation(5L, manager, house, "vannak@example.com",
+        TenantInvitation invitation = invitation(5L, manager, house, "vannak@rental.com",
                 TenantInvitationStatus.PENDING, LocalDateTime.now().minusSeconds(1));
         when(tenantInvitationRepository.findByTokenHash(InvitationTokenUtil.hashToken("rawtoken")))
                 .thenReturn(Optional.of(invitation));
@@ -241,7 +241,7 @@ class TenantInvitationServiceImplTest {
     void validateReturnsAlreadyUsedForUsedInvitation() {
         User manager = user(1L, "managerA");
         House house = house(10L, manager);
-        TenantInvitation invitation = invitation(5L, manager, house, "vannak@example.com",
+        TenantInvitation invitation = invitation(5L, manager, house, "vannak@rental.com",
                 TenantInvitationStatus.USED, LocalDateTime.now().plusMinutes(5));
         when(tenantInvitationRepository.findByTokenHash(InvitationTokenUtil.hashToken("rawtoken")))
                 .thenReturn(Optional.of(invitation));
@@ -256,7 +256,7 @@ class TenantInvitationServiceImplTest {
     void validateReturnsRevokedForRevokedInvitation() {
         User manager = user(1L, "managerA");
         House house = house(10L, manager);
-        TenantInvitation invitation = invitation(5L, manager, house, "vannak@example.com",
+        TenantInvitation invitation = invitation(5L, manager, house, "vannak@rental.com",
                 TenantInvitationStatus.REVOKED, LocalDateTime.now().plusMinutes(5));
         when(tenantInvitationRepository.findByTokenHash(InvitationTokenUtil.hashToken("rawtoken")))
                 .thenReturn(Optional.of(invitation));
@@ -272,12 +272,12 @@ class TenantInvitationServiceImplTest {
         User owner = user(2L, "ownerB");
         User manager = user(1L, "managerA");
         House house = house(10L, owner);
-        TenantInvitation invitation = invitation(5L, manager, house, "vannak@example.com",
+        TenantInvitation invitation = invitation(5L, manager, house, "vannak@rental.com",
                 TenantInvitationStatus.PENDING, LocalDateTime.now().plusMinutes(5));
         when(tenantInvitationRepository.findByTokenHash(InvitationTokenUtil.hashToken("rawtoken")))
                 .thenReturn(Optional.of(invitation));
         when(userRepository.existsByUsername("vannak")).thenReturn(false);
-        when(userRepository.existsByEmail("vannak@example.com")).thenReturn(false);
+        when(userRepository.existsByEmail("vannak@rental.com")).thenReturn(false);
         when(tenantRepository.existsByOwnerIdAndPhone(2L, "012345678")).thenReturn(false);
         when(tenantInvitationRepository.markUsedIfPendingAndNotExpired(eq(5L), any(), any()))
                 .thenReturn(1);
@@ -298,13 +298,13 @@ class TenantInvitationServiceImplTest {
         });
 
         InvitationConsumeResponse response = tenantInvitationService.consumeInvitation(
-                new ConsumeTenantInvitationRequest("rawtoken", "vannak", "vannak@example.com",
+                new ConsumeTenantInvitationRequest("rawtoken", "vannak", "vannak@rental.com",
                         "Password123", "Vannak", "Sok", "012345678"));
 
         assertThat(response.success()).isTrue();
         assertThat(response.tenantId()).isEqualTo(9L);
         assertThat(response.username()).isEqualTo("vannak");
-        assertThat(response.email()).isEqualTo("vannak@example.com");
+        assertThat(response.email()).isEqualTo("vannak@rental.com");
 
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(userCaptor.capture());
@@ -320,7 +320,7 @@ class TenantInvitationServiceImplTest {
         assertThat(tenantCaptor.getValue().getStatus()).isEqualTo(TenantStatus.PENDING);
         assertThat(tenantCaptor.getValue().getOwner()).isSameAs(owner);
         assertThat(tenantCaptor.getValue().getUser().getId()).isEqualTo(50L);
-        assertThat(tenantCaptor.getValue().getEmail()).isEqualTo("vannak@example.com");
+        assertThat(tenantCaptor.getValue().getEmail()).isEqualTo("vannak@rental.com");
     }
 
     @Test
@@ -328,7 +328,7 @@ class TenantInvitationServiceImplTest {
         when(tenantInvitationRepository.findByTokenHash(anyString())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> tenantInvitationService.consumeInvitation(
-                new ConsumeTenantInvitationRequest("bad", "vannak", "vannak@example.com",
+                new ConsumeTenantInvitationRequest("bad", "vannak", "vannak@rental.com",
                         "Password123", "Vannak", "Sok", "012345678")))
                 .isInstanceOf(InvalidInvitationTokenException.class);
     }
@@ -337,13 +337,13 @@ class TenantInvitationServiceImplTest {
     void consumeRejectsExpiredInvitation() {
         User manager = user(1L, "managerA");
         House house = house(10L, manager);
-        TenantInvitation invitation = invitation(5L, manager, house, "vannak@example.com",
+        TenantInvitation invitation = invitation(5L, manager, house, "vannak@rental.com",
                 TenantInvitationStatus.PENDING, LocalDateTime.now().minusSeconds(1));
         when(tenantInvitationRepository.findByTokenHash(InvitationTokenUtil.hashToken("rawtoken")))
                 .thenReturn(Optional.of(invitation));
 
         assertThatThrownBy(() -> tenantInvitationService.consumeInvitation(
-                new ConsumeTenantInvitationRequest("rawtoken", "vannak", "vannak@example.com",
+                new ConsumeTenantInvitationRequest("rawtoken", "vannak", "vannak@rental.com",
                         "Password123", "Vannak", "Sok", "012345678")))
                 .isInstanceOf(InvitationExpiredException.class);
     }
@@ -352,13 +352,13 @@ class TenantInvitationServiceImplTest {
     void consumeRejectsRevokedInvitation() {
         User manager = user(1L, "managerA");
         House house = house(10L, manager);
-        TenantInvitation invitation = invitation(5L, manager, house, "vannak@example.com",
+        TenantInvitation invitation = invitation(5L, manager, house, "vannak@rental.com",
                 TenantInvitationStatus.REVOKED, LocalDateTime.now().plusMinutes(5));
         when(tenantInvitationRepository.findByTokenHash(InvitationTokenUtil.hashToken("rawtoken")))
                 .thenReturn(Optional.of(invitation));
 
         assertThatThrownBy(() -> tenantInvitationService.consumeInvitation(
-                new ConsumeTenantInvitationRequest("rawtoken", "vannak", "vannak@example.com",
+                new ConsumeTenantInvitationRequest("rawtoken", "vannak", "vannak@rental.com",
                         "Password123", "Vannak", "Sok", "012345678")))
                 .isInstanceOf(InvitationRevokedException.class);
     }
@@ -367,13 +367,13 @@ class TenantInvitationServiceImplTest {
     void consumeRejectsUsedInvitation() {
         User manager = user(1L, "managerA");
         House house = house(10L, manager);
-        TenantInvitation invitation = invitation(5L, manager, house, "vannak@example.com",
+        TenantInvitation invitation = invitation(5L, manager, house, "vannak@rental.com",
                 TenantInvitationStatus.USED, LocalDateTime.now().plusMinutes(5));
         when(tenantInvitationRepository.findByTokenHash(InvitationTokenUtil.hashToken("rawtoken")))
                 .thenReturn(Optional.of(invitation));
 
         assertThatThrownBy(() -> tenantInvitationService.consumeInvitation(
-                new ConsumeTenantInvitationRequest("rawtoken", "vannak", "vannak@example.com",
+                new ConsumeTenantInvitationRequest("rawtoken", "vannak", "vannak@rental.com",
                         "Password123", "Vannak", "Sok", "012345678")))
                 .isInstanceOf(InvitationAlreadyUsedException.class);
     }
@@ -382,29 +382,64 @@ class TenantInvitationServiceImplTest {
     void consumeRejectsEmailMismatch() {
         User manager = user(1L, "managerA");
         House house = house(10L, manager);
-        TenantInvitation invitation = invitation(5L, manager, house, "invited@example.com",
+        TenantInvitation invitation = invitation(5L, manager, house, "invited@rental.com",
                 TenantInvitationStatus.PENDING, LocalDateTime.now().plusMinutes(5));
         when(tenantInvitationRepository.findByTokenHash(InvitationTokenUtil.hashToken("rawtoken")))
                 .thenReturn(Optional.of(invitation));
 
         assertThatThrownBy(() -> tenantInvitationService.consumeInvitation(
-                new ConsumeTenantInvitationRequest("rawtoken", "vannak", "other@example.com",
+                new ConsumeTenantInvitationRequest("rawtoken", "vannak", "other@rental.com",
                         "Password123", "Vannak", "Sok", "012345678")))
                 .isInstanceOf(InvitationEmailMismatchException.class);
+    }
+
+    @Test
+    void consumeAllowsExternalEmailForTenant() {
+        User manager = user(1L, "managerA");
+        User owner = user(2L, "ownerB");
+        House house = house(10L, owner);
+        TenantInvitation invitation = invitation(5L, manager, house, "john.doe@gmail.com",
+                TenantInvitationStatus.PENDING, LocalDateTime.now().plusMinutes(5));
+        when(tenantInvitationRepository.findByTokenHash(InvitationTokenUtil.hashToken("rawtoken")))
+                .thenReturn(Optional.of(invitation));
+        when(userRepository.existsByUsername("johndoe")).thenReturn(false);
+        when(userRepository.existsByEmail("john.doe@gmail.com")).thenReturn(false);
+        when(tenantRepository.existsByOwnerIdAndPhone(2L, "012345678")).thenReturn(false);
+        when(tenantInvitationRepository.markUsedIfPendingAndNotExpired(eq(5L), any(), any()))
+                .thenReturn(1);
+        when(passwordEncoder.encode("Password123")).thenReturn("encoded-123");
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> {
+            User u = inv.getArgument(0);
+            u.setId(60L);
+            return u;
+        });
+        Role role = Role.builder().id(3L).code("TENANT").name("Tenant").build();
+        when(roleRepository.findByCode("TENANT")).thenReturn(Optional.of(role));
+        when(userRoleRepository.existsByUserIdAndRoleId(60L, 3L)).thenReturn(false);
+        when(tenantRepository.existsByOwnerIdAndTenantCode(eq(2L), anyString())).thenReturn(false);
+        when(tenantRepository.save(any(Tenant.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        InvitationConsumeResponse response = tenantInvitationService.consumeInvitation(
+                new ConsumeTenantInvitationRequest("rawtoken", "johndoe", "john.doe@gmail.com",
+                        "Password123", "John", "Doe", "012345678"));
+
+        assertThat(response.success()).isTrue();
+        assertThat(response.email()).isEqualTo("john.doe@gmail.com");
+        verify(userRepository).save(any(User.class));
     }
 
     @Test
     void consumeRejectsDuplicateUsername() {
         User manager = user(1L, "managerA");
         House house = house(10L, manager);
-        TenantInvitation invitation = invitation(5L, manager, house, "vannak@example.com",
+        TenantInvitation invitation = invitation(5L, manager, house, "vannak@rental.com",
                 TenantInvitationStatus.PENDING, LocalDateTime.now().plusMinutes(5));
         when(tenantInvitationRepository.findByTokenHash(InvitationTokenUtil.hashToken("rawtoken")))
                 .thenReturn(Optional.of(invitation));
         when(userRepository.existsByUsername("vannak")).thenReturn(true);
 
         assertThatThrownBy(() -> tenantInvitationService.consumeInvitation(
-                new ConsumeTenantInvitationRequest("rawtoken", "vannak", "vannak@example.com",
+                new ConsumeTenantInvitationRequest("rawtoken", "vannak", "vannak@rental.com",
                         "Password123", "Vannak", "Sok", "012345678")))
                 .isInstanceOf(DuplicateResourceException.class);
     }
@@ -413,15 +448,15 @@ class TenantInvitationServiceImplTest {
     void consumeRejectsDuplicateEmail() {
         User manager = user(1L, "managerA");
         House house = house(10L, manager);
-        TenantInvitation invitation = invitation(5L, manager, house, "vannak@example.com",
+        TenantInvitation invitation = invitation(5L, manager, house, "vannak@rental.com",
                 TenantInvitationStatus.PENDING, LocalDateTime.now().plusMinutes(5));
         when(tenantInvitationRepository.findByTokenHash(InvitationTokenUtil.hashToken("rawtoken")))
                 .thenReturn(Optional.of(invitation));
         when(userRepository.existsByUsername("vannak")).thenReturn(false);
-        when(userRepository.existsByEmail("vannak@example.com")).thenReturn(true);
+        when(userRepository.existsByEmail("vannak@rental.com")).thenReturn(true);
 
         assertThatThrownBy(() -> tenantInvitationService.consumeInvitation(
-                new ConsumeTenantInvitationRequest("rawtoken", "vannak", "vannak@example.com",
+                new ConsumeTenantInvitationRequest("rawtoken", "vannak", "vannak@rental.com",
                         "Password123", "Vannak", "Sok", "012345678")))
                 .isInstanceOf(DuplicateResourceException.class);
     }
@@ -430,18 +465,18 @@ class TenantInvitationServiceImplTest {
     void consumeLoserOfAtomicClaimThrowsAlreadyUsed() {
         User manager = user(1L, "managerA");
         House house = house(10L, manager);
-        TenantInvitation invitation = invitation(5L, manager, house, "vannak@example.com",
+        TenantInvitation invitation = invitation(5L, manager, house, "vannak@rental.com",
                 TenantInvitationStatus.PENDING, LocalDateTime.now().plusMinutes(5));
         when(tenantInvitationRepository.findByTokenHash(InvitationTokenUtil.hashToken("rawtoken")))
                 .thenReturn(Optional.of(invitation));
         when(userRepository.existsByUsername("vannak")).thenReturn(false);
-        when(userRepository.existsByEmail("vannak@example.com")).thenReturn(false);
+        when(userRepository.existsByEmail("vannak@rental.com")).thenReturn(false);
         when(tenantRepository.existsByOwnerIdAndPhone(1L, "012345678")).thenReturn(false);
         when(tenantInvitationRepository.markUsedIfPendingAndNotExpired(eq(5L), any(), any()))
                 .thenReturn(0);
 
         assertThatThrownBy(() -> tenantInvitationService.consumeInvitation(
-                new ConsumeTenantInvitationRequest("rawtoken", "vannak", "vannak@example.com",
+                new ConsumeTenantInvitationRequest("rawtoken", "vannak", "vannak@rental.com",
                         "Password123", "Vannak", "Sok", "012345678")))
                 .isInstanceOf(InvitationAlreadyUsedException.class);
         verify(userRepository, never()).save(any());
@@ -451,7 +486,7 @@ class TenantInvitationServiceImplTest {
     void revokeByCreatorMarksRevoked() {
         User manager = user(1L, "managerA");
         House house = house(10L, manager);
-        TenantInvitation invitation = invitation(5L, manager, house, "vannak@example.com",
+        TenantInvitation invitation = invitation(5L, manager, house, "vannak@rental.com",
                 TenantInvitationStatus.PENDING, LocalDateTime.now().plusMinutes(5));
         when(tenantInvitationRepository.findById(5L)).thenReturn(Optional.of(invitation));
         when(securityUtils.getCurrentUserId()).thenReturn(1L);
@@ -468,7 +503,7 @@ class TenantInvitationServiceImplTest {
         User manager = user(1L, "managerA");
         User owner = user(2L, "ownerB");
         House house = house(10L, owner);
-        TenantInvitation invitation = invitation(5L, manager, house, "vannak@example.com",
+        TenantInvitation invitation = invitation(5L, manager, house, "vannak@rental.com",
                 TenantInvitationStatus.PENDING, LocalDateTime.now().plusMinutes(5));
         when(tenantInvitationRepository.findById(5L)).thenReturn(Optional.of(invitation));
         when(securityUtils.getCurrentUserId()).thenReturn(7L);
@@ -483,7 +518,7 @@ class TenantInvitationServiceImplTest {
     void revokeRejectsUsedInvitation() {
         User manager = user(1L, "managerA");
         House house = house(10L, manager);
-        TenantInvitation invitation = invitation(5L, manager, house, "vannak@example.com",
+        TenantInvitation invitation = invitation(5L, manager, house, "vannak@rental.com",
                 TenantInvitationStatus.USED, LocalDateTime.now().plusMinutes(5));
         when(tenantInvitationRepository.findById(5L)).thenReturn(Optional.of(invitation));
         when(securityUtils.getCurrentUserId()).thenReturn(1L);
@@ -504,7 +539,7 @@ class TenantInvitationServiceImplTest {
     void getMyInvitationsReturnsOnlyOwnedInvitations() {
         User manager = user(1L, "managerA");
         House house = house(10L, manager);
-        TenantInvitation pending = invitation(5L, manager, house, "vannak@example.com",
+        TenantInvitation pending = invitation(5L, manager, house, "vannak@rental.com",
                 TenantInvitationStatus.PENDING, LocalDateTime.now().plusMinutes(5));
         when(securityUtils.getCurrentUserId()).thenReturn(1L);
         when(tenantInvitationRepository.findAllVisibleByUserIdOrderByCreatedAtDesc(1L))
@@ -515,6 +550,6 @@ class TenantInvitationServiceImplTest {
         assertThat(responses).hasSize(1);
         assertThat(responses.get(0).id()).isEqualTo(5L);
         assertThat(responses.get(0).houseName()).isEqualTo("Golden House");
-        assertThat(responses.get(0).email()).isEqualTo("vannak@example.com");
+        assertThat(responses.get(0).email()).isEqualTo("vannak@rental.com");
     }
 }

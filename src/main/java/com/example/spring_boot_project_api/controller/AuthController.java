@@ -7,21 +7,33 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.example.spring_boot_project_api.dto.request.ForgotPasswordRequest;
 import com.example.spring_boot_project_api.dto.request.LoginRequest;
 import com.example.spring_boot_project_api.dto.request.RegisterRequest;
+import com.example.spring_boot_project_api.dto.request.ResetPasswordRequest;
+import com.example.spring_boot_project_api.dto.request.VerifyPasswordResetOtpRequest;
+import com.example.spring_boot_project_api.dto.request.VerifyTwoFactorRequest;
 import com.example.spring_boot_project_api.dto.response.LoginResponse;
+import com.example.spring_boot_project_api.dto.response.MessageResponse;
+import com.example.spring_boot_project_api.dto.response.ResetOtpVerificationResponse;
+import com.example.spring_boot_project_api.dto.response.TwoFactorChallengeResponse;
 import com.example.spring_boot_project_api.dto.response.UserResponse;
 import com.example.spring_boot_project_api.service.AuthService;
+import com.example.spring_boot_project_api.service.SecurityService;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
+@Tag(name = "Authentication")
 public class AuthController {
 
     private final AuthService authService;
+    private final SecurityService securityService;
 
     @PostMapping("/register")
     public ResponseEntity<UserResponse> register(@Valid @RequestBody RegisterRequest request) {
@@ -30,7 +42,37 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
-        return ResponseEntity.ok(authService.login(request));
+    public ResponseEntity<Object> login(@Valid @RequestBody LoginRequest request,
+            HttpServletRequest http) {
+        return ResponseEntity.ok(authService.login(request, http));
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<MessageResponse> forgotPassword(
+            @Valid @RequestBody ForgotPasswordRequest request, HttpServletRequest http) {
+        return ResponseEntity.ok(securityService.forgotPassword(request, http));
+    }
+
+    @PostMapping("/forgot-password/verify-otp")
+    public ResponseEntity<ResetOtpVerificationResponse> verifyPasswordResetOtp(
+            @Valid @RequestBody VerifyPasswordResetOtpRequest request, HttpServletRequest http) {
+        return ResponseEntity.ok(securityService.verifyPasswordResetOtp(request, http));
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<MessageResponse> resetPassword(
+            @Valid @RequestBody ResetPasswordRequest request, HttpServletRequest http) {
+        return ResponseEntity.ok(securityService.resetPassword(request, http));
+    }
+
+    /**
+     * Completes 2FA login. Only a valid challenge token (issued after correct
+     * credentials) plus the correct OTP results in a final JWT.
+     */
+    @PostMapping("/2fa/verify")
+    public ResponseEntity<LoginResponse> verifyTwoFactor(
+            @Valid @RequestBody VerifyTwoFactorRequest request, HttpServletRequest http) {
+        return ResponseEntity.ok(
+                authService.completeTwoFactorLogin(request.challengeToken(), request.otp(), http));
     }
 }

@@ -13,14 +13,17 @@ import com.example.spring_boot_project_api.dto.request.RegisterRequest;
 import com.example.spring_boot_project_api.dto.response.LoginResponse;
 import com.example.spring_boot_project_api.dto.response.UserResponse;
 import com.example.spring_boot_project_api.exception.DuplicateResourceException;
+import com.example.spring_boot_project_api.exception.InvalidEmailException;
 import com.example.spring_boot_project_api.mapper.UserMapper;
 import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.model.UserStatus;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.AuthService;
 import com.example.spring_boot_project_api.service.UserService;
+import com.example.spring_boot_project_api.util.EmailValidator;
 import com.example.spring_boot_project_api.util.JwtUtil;
 
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 
 @Service
@@ -32,6 +35,7 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final UserMapper userMapper;
+    private final SecurityServiceImpl securityService;
 
     @Override
     @Transactional
@@ -43,6 +47,13 @@ public class AuthServiceImpl implements AuthService {
             throw new DuplicateResourceException("Email is already registered");
         }
 
+        // Self-registration is an internal (non-TENANT) account path: tenants join
+        // via invitation acceptance and may use any login email, while internal
+        // accounts require a corporate-domain login email.
+        if (!EmailValidator.isOnInternalDomain(request.email())) {
+            throw new InvalidEmailException(EmailValidator.internalEmailRequirement());
+        }
+
         User user = userMapper.toEntity(request);
         user.setPasswordHash(passwordEncoder.encode(request.password()));
 
@@ -52,9 +63,28 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public LoginResponse login(LoginRequest request) {
+    public Object login(LoginRequest request, HttpServletRequest http) {
         User user = authenticate(request.usernameOrEmail(), request.password());
 
+        user.setLastLoginAt(LocalDateTime.now());
+        user = userService.createUser(user);
+
+        if (securityService.requiresTwoFactor(user)) {
+            return securityService.createTwoFactorChallenge(user, http);
+        }
+
+        String token = jwtUtil.generateToken(user.getUsername());
+        return new LoginResponse(token, "Bearer", jwtUtil.getExpirationMs(),
+                userMapper.toResponse(user));
+    }
+
+    @Override
+    @Transactional
+    public LoginResponse completeTwoFactorLogin(String challengeToken, String otp,
+            HttpServletRequest http) {
+        Long userId = securityService.verifyTwoFactor(challengeToken, otp, http);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BadCredentialsException("Invalid username or password"));
         user.setLastLoginAt(LocalDateTime.now());
         user = userService.createUser(user);
 

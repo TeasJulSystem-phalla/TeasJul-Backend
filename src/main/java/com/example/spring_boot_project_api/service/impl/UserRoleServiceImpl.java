@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.example.spring_boot_project_api.dto.response.RoleResponse;
 import com.example.spring_boot_project_api.exception.DuplicateResourceException;
+import com.example.spring_boot_project_api.exception.InvalidEmailException;
 import com.example.spring_boot_project_api.exception.RoleNotFoundException;
 import com.example.spring_boot_project_api.exception.UserNotFoundException;
 import com.example.spring_boot_project_api.exception.UserRoleNotFoundException;
@@ -20,6 +21,7 @@ import com.example.spring_boot_project_api.repository.RoleRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.repository.UserRoleRepository;
 import com.example.spring_boot_project_api.service.UserRoleService;
+import com.example.spring_boot_project_api.util.EmailValidator;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -62,6 +64,12 @@ public class UserRoleServiceImpl implements UserRoleService {
         requireOwner();
         User user = getUserOrThrow(userId);
         Role role = getRoleOrThrow(roleId);
+
+        if (EmailValidator.isInternalRole(role.getCode())
+                && !EmailValidator.isOnInternalDomain(user.getEmail())) {
+            throw new InvalidEmailException(
+                    EmailValidator.internalEmailRequirement());
+        }
 
         if (userRoleRepository.existsByUserIdAndRoleId(userId, roleId)) {
             throw new DuplicateResourceException("Role " + role.getCode()
