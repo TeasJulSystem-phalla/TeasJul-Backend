@@ -19,6 +19,8 @@ import com.example.spring_boot_project_api.repository.ExpenseRepository;
 import com.example.spring_boot_project_api.repository.HouseRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.ExpenseService;
+import com.example.spring_boot_project_api.util.PermissionConstants;
+import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.TransactionScoped;
@@ -34,10 +36,12 @@ public class ExpenseServiceImpl implements ExpenseService {
     private final ExpenseCategoryRepository expenseCategoryRepository;
     // private final PaymentMethodRepository paymentMethodRepository;
     private final ExpenseMapper mapper;
+    private final SecurityUtils securityUtils;
 
     @Override
     @Transactional
     public ExpenseResponse create(ExpenseRequest request) {
+        securityUtils.requirePermission(PermissionConstants.EXPENSE_CREATE);
         Long ownerId = request.ownerId();
 
         // 1. Validate Owner
@@ -81,6 +85,7 @@ public class ExpenseServiceImpl implements ExpenseService {
 
     @Override
     public ExpenseResponse getByIdAndOwnerId(Long id, Long ownerId) {
+        securityUtils.requirePermission(PermissionConstants.EXPENSE_VIEW);
         Expense entity = expenseRepository.findByIdAndOwnerId(id, ownerId)
                 .orElseThrow(() -> new EntityNotFoundException("Expense not found with ID: " + id + " for owner: " + ownerId));
         return mapper.toResponse(entity);
@@ -88,6 +93,7 @@ public class ExpenseServiceImpl implements ExpenseService {
 
     @Override
     public List<ExpenseResponse> getAllByOwnerId(Long ownerId) {
+        securityUtils.requirePermission(PermissionConstants.EXPENSE_VIEW);
         return expenseRepository.findByOwnerId(ownerId)
                 .stream()
                 .map(mapper::toResponse)
@@ -96,6 +102,7 @@ public class ExpenseServiceImpl implements ExpenseService {
 
     @Override
     public Page<ExpenseResponse> getAllByOwnerId(Long ownerId, Pageable pageable) {
+        securityUtils.requirePermission(PermissionConstants.EXPENSE_VIEW);
         return expenseRepository.findByOwnerId(ownerId, pageable)
                 .map(mapper::toResponse);
     }
@@ -103,6 +110,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     @Transactional
     public ExpenseResponse update(Long id, ExpenseRequest request) {
+        securityUtils.requirePermission(PermissionConstants.EXPENSE_UPDATE);
         Long ownerId = request.ownerId();
 
         Expense existingExpense = expenseRepository.findByIdAndOwnerId(id, ownerId)
@@ -145,6 +153,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     @Transactional
     public void delete(Long id, Long ownerId) {
+        securityUtils.requirePermission(PermissionConstants.EXPENSE_DELETE);
         Expense expense = expenseRepository.findByIdAndOwnerId(id, ownerId)
                 .orElseThrow(() -> new EntityNotFoundException("Expense not found with ID: " + id + " for owner: " + ownerId));
         expenseRepository.delete(expense);

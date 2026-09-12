@@ -29,6 +29,7 @@ import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.repository.UtilityTypeRepository;
 import com.example.spring_boot_project_api.service.RoomUtilityService;
+import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -49,6 +50,7 @@ public class RoomUtilityServiceImpl implements RoomUtilityService {
     @Override
     @Transactional(readOnly = true)
     public List<RoomUtilityResponse> getRoomUtilities(Long roomId) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_VIEW);
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> RoomNotFoundException.forId(roomId));
         Long ownerId = resolveOwnerId(room);
@@ -68,6 +70,7 @@ public class RoomUtilityServiceImpl implements RoomUtilityService {
     @Override
     @Transactional
     public RoomUtilityResponse assignUtility(Long roomId, Long utilityTypeId) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_MANAGE);
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> RoomNotFoundException.forId(roomId));
         Long ownerId = resolveOwnerId(room);
@@ -103,6 +106,7 @@ public class RoomUtilityServiceImpl implements RoomUtilityService {
     @Override
     @Transactional
     public void removeUtility(Long roomId, Long utilityTypeId) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_MANAGE);
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> RoomNotFoundException.forId(roomId));
         Long ownerId = resolveOwnerId(room);

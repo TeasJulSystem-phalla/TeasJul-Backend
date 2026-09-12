@@ -44,6 +44,7 @@ import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.service.MaintenanceRequestService;
 import com.example.spring_boot_project_api.service.NotificationService;
+import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -82,6 +83,7 @@ public class MaintenanceRequestServiceImpl implements MaintenanceRequestService 
     @Override
     @Transactional
     public MaintenanceRequestResponse createRequest(CreateMaintenanceRequestRequest request) {
+        securityUtils.requirePermission(PermissionConstants.MAINTENANCE_CREATE);
         User owner = getCurrentOwner();
 
         House house = getOwnedHouse(request.houseId(), owner.getId());
@@ -113,6 +115,7 @@ public class MaintenanceRequestServiceImpl implements MaintenanceRequestService 
     @Override
     @Transactional(readOnly = true)
     public List<MaintenanceRequestResponse> getMyRequests() {
+        securityUtils.requirePermission(PermissionConstants.MAINTENANCE_VIEW);
         User owner = getCurrentOwner();
         if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)
                 && !securityUtils.hasRole(SecurityUtils.ROLE_OWNER)) {
@@ -132,6 +135,7 @@ public class MaintenanceRequestServiceImpl implements MaintenanceRequestService 
     @Override
     @Transactional(readOnly = true)
     public List<MaintenanceRequestResponse> getMyRequestsAsTenant() {
+        securityUtils.requirePermission(PermissionConstants.MAINTENANCE_VIEW);
         Tenant tenant = getMyTenant();
         return requestRepository.findAllByTenantIdOrderByCreatedAtDesc(tenant.getId()).stream()
                 .map(requestMapper::toResponse)
@@ -141,6 +145,7 @@ public class MaintenanceRequestServiceImpl implements MaintenanceRequestService 
     @Override
     @Transactional
     public MaintenanceRequestResponse createMyRequest(CreateTenantMaintenanceRequestRequest request) {
+        securityUtils.requirePermission(PermissionConstants.MAINTENANCE_CREATE);
         Tenant tenant = getMyTenant();
         RentalContract contract = tenantContextResolver.activeContractOf(tenant.getId());
         if (contract == null) {
@@ -178,12 +183,14 @@ public class MaintenanceRequestServiceImpl implements MaintenanceRequestService 
     @Override
     @Transactional(readOnly = true)
     public MaintenanceRequestResponse getRequestById(Long id) {
+        securityUtils.requirePermission(PermissionConstants.MAINTENANCE_VIEW);
         return requestMapper.toResponse(getOwnedRequest(id));
     }
 
     @Override
     @Transactional
     public MaintenanceRequestResponse updateRequest(Long id, UpdateMaintenanceRequestRequest request) {
+        securityUtils.requirePermission(PermissionConstants.MAINTENANCE_UPDATE);
         MaintenanceRequest maintenanceRequest = getOwnedRequest(id);
 
         if (request.title() != null) {
@@ -202,6 +209,7 @@ public class MaintenanceRequestServiceImpl implements MaintenanceRequestService 
     @Override
     @Transactional
     public void changeStatus(Long id, ChangeMaintenanceRequestStatusRequest request) {
+        securityUtils.requirePermission(PermissionConstants.MAINTENANCE_MANAGE);
         MaintenanceRequest maintenanceRequest = getOwnedRequest(id);
         MaintenanceRequestStatus currentStatus = maintenanceRequest.getStatus();
         MaintenanceRequestStatus newStatus = request.status();

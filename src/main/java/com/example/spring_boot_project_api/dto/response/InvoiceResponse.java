@@ -27,6 +27,8 @@ public record InvoiceResponse(
         BigDecimal lateFee,
         BigDecimal totalAmount,
         InvoiceStatus status,
+        BigDecimal exchangeRate,
+        String exchangeRateCurrency,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
         List<InvoiceItemResponse> items

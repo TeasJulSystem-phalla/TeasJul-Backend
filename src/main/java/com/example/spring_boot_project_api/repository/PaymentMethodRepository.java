@@ -16,6 +16,8 @@ public interface PaymentMethodRepository extends JpaRepository<PaymentMethod, Lo
 
     Optional<PaymentMethod> findFirstByOwnerIdAndStatus(Long ownerId, PaymentMethodStatus status);
 
+    Optional<PaymentMethod> findFirstByOwnerIdAndCodeAndStatus(Long ownerId, String code, PaymentMethodStatus status);
+
     boolean existsByOwnerIdAndCodeAndStatus(Long ownerId, String code, PaymentMethodStatus status);
 
     boolean existsByOwnerIdAndCode(Long ownerId, String code);

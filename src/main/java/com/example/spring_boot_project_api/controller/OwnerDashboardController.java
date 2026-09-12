@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.spring_boot_project_api.dto.response.OwnerDashboardResponse;
 import com.example.spring_boot_project_api.service.OwnerDashboardService;
+import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,6 +35,7 @@ public class OwnerDashboardController {
             @RequestParam(required = false) Long houseId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate) {
+        securityUtils.requirePermission(PermissionConstants.DASHBOARD_VIEW);
         requireOwner();
         return ownerDashboardService.getDashboard(houseId, fromDate, toDate);
     }

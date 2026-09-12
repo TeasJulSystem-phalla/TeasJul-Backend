@@ -76,7 +76,8 @@ public class RolePermissionServiceImpl implements RolePermissionService {
     @Transactional
     public void removePermissionFromRole(Long roleId, Long permissionId) {
         requireOwner();
-        getRoleOrThrow(roleId);
+        Role role = getRoleOrThrow(roleId);
+        ensureNotOwnerRole(role);
 
         if (!rolePermissionRepository.existsByRoleIdAndPermissionId(roleId, permissionId)) {
             throw RolePermissionNotFoundException.forIds(roleId, permissionId);
@@ -91,6 +92,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
             ReplaceRolePermissionsRequest request) {
         requireOwner();
         Role role = getRoleOrThrow(roleId);
+        ensureNotOwnerRole(role);
 
         Set<Long> permissionIds = new LinkedHashSet<>(request.permissionIds());
 
@@ -124,6 +126,17 @@ public class RolePermissionServiceImpl implements RolePermissionService {
     private void requireOwner() {
         if (!securityUtils.hasRole(SecurityUtils.ROLE_OWNER)) {
             throw new AccessDeniedException("You do not have permission to access this resource");
+        }
+    }
+
+    /**
+     * The OWNER role always keeps every permission: it cannot be downgraded through
+     * the permission management APIs (enforced here in addition to the UI).
+     */
+    private void ensureNotOwnerRole(Role role) {
+        if (SecurityUtils.ROLE_OWNER.equalsIgnoreCase(role.getCode())) {
+            throw new AccessDeniedException(
+                    "The Owner role always retains all permissions and cannot be modified");
         }
     }
 

@@ -58,6 +58,9 @@ import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.service.NotificationService;
 import com.example.spring_boot_project_api.service.PayWayService;
 import com.example.spring_boot_project_api.service.PaymentService;
+import com.example.spring_boot_project_api.service.OwnerSettingService;
+import com.example.spring_boot_project_api.service.TelegramService;
+import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import jakarta.persistence.criteria.Predicate;
@@ -95,10 +98,13 @@ public class PaymentServiceImpl implements PaymentService {
     private final HouseRepository houseRepository;
     private final TenantRepository tenantRepository;
     private final NotificationService notificationService;
+    private final OwnerSettingService ownerSettingService;
+    private final TelegramService telegramService;
 
     @Override
     @Transactional
     public PaymentResponse createPayment(CreatePaymentRequest request) {
+        securityUtils.requirePermission(PermissionConstants.PAYMENT_CREATE);
         verifyCanCreatePayment();
 
         Invoice invoice = loadAndAuthorizeInvoice(request.invoiceId());
@@ -121,6 +127,8 @@ public class PaymentServiceImpl implements PaymentService {
                 .transactionId(transactionId)
                 .amount(amount)
                 .currency("USD")
+                .exchangeRate(ownerSettingService.getExchangeRate(invoice.getOwner().getId()))
+                .exchangeRateTo("KHR")
                 .status(PaymentStatus.PENDING)
                 .build();
 
@@ -144,6 +152,7 @@ public class PaymentServiceImpl implements PaymentService {
             } catch (RuntimeException e) {
                 log.warn("Failed to create payment-created notification", e);
             }
+            telegramService.sendPaymentCreated(updatedPayment);
             return paymentMapper.toResponse(updatedPayment);
 
         } catch (PayWayIntegrationException e) {
@@ -162,6 +171,7 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional
     public PaymentResponse recordManualPayment(RecordManualPaymentRequest request) {
+        securityUtils.requirePermission(PermissionConstants.PAYMENT_CREATE);
         verifyCanRecordManualPayment();
 
         Invoice invoice = loadAndAuthorizeInvoice(request.invoiceId());
@@ -199,6 +209,8 @@ public class PaymentServiceImpl implements PaymentService {
                 .transactionId(transactionId)
                 .amount(amount)
                 .currency("USD")
+                .exchangeRate(ownerSettingService.getExchangeRate(invoice.getOwner().getId()))
+                .exchangeRateTo("KHR")
                 .status(PaymentStatus.PAID)
                 .paidAt(request.paidAt() != null ? request.paidAt() : LocalDateTime.now())
                 .build();
@@ -212,6 +224,7 @@ public class PaymentServiceImpl implements PaymentService {
         } catch (RuntimeException e) {
             log.warn("Failed to create payment-success notification", e);
         }
+        telegramService.sendPaymentSuccess(savedPayment);
 
         updateInvoiceStatus(invoice.getId());
 
@@ -285,6 +298,7 @@ public class PaymentServiceImpl implements PaymentService {
     @Transactional(readOnly = true)
     public PageResponse<PaymentListResponse> getPayments(Long houseId, PaymentStatus status,
             LocalDate fromDate, LocalDate toDate, Pageable pageable) {
+        securityUtils.requirePermission(PermissionConstants.PAYMENT_VIEW);
         List<Long> ownerIds = houseAccessService.getScopedOwnerIds();
         if (ownerIds.isEmpty()) {
             return PageResponse.of(List.of(), pageable.getPageNumber(), pageable.getPageSize(), 0, 0);
@@ -563,6 +577,7 @@ public class PaymentServiceImpl implements PaymentService {
         } catch (RuntimeException e) {
             log.warn("Failed to create payment-success notification", e);
         }
+        telegramService.sendPaymentSuccess(payment);
 
         updateInvoiceStatus(payment.getInvoiceId());
     }
@@ -698,8 +713,11 @@ public class PaymentServiceImpl implements PaymentService {
                 throw PaymentMethodNotFoundException.forId(paymentMethodId);
             }
         } else {
-            paymentMethod = paymentMethodRepository.findFirstByOwnerIdAndStatus(
-                    invoice.getOwner().getId(), PaymentMethodStatus.ACTIVE)
+            paymentMethod = paymentMethodRepository
+                    .findFirstByOwnerIdAndCodeAndStatus(
+                            invoice.getOwner().getId(), "KHQR", PaymentMethodStatus.ACTIVE)
+                    .or(() -> paymentMethodRepository.findFirstByOwnerIdAndStatus(
+                            invoice.getOwner().getId(), PaymentMethodStatus.ACTIVE))
                     .orElseGet(() -> {
                         PaymentMethod defaultMethod = PaymentMethod.builder()
                                 .owner(invoice.getOwner())

@@ -63,6 +63,12 @@ public class Payment {
     @Column(name = "currency", nullable = false, length = 3)
     private String currency = "USD";
 
+    @Column(name = "exchange_rate", precision = 12, scale = 4)
+    private BigDecimal exchangeRate;
+
+    @Column(name = "exchange_rate_to", length = 3)
+    private String exchangeRateTo;
+
     @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, columnDefinition = "ENUM('PENDING','PAID','FAILED','EXPIRED','CANCELLED') DEFAULT 'PENDING'")

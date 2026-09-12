@@ -36,6 +36,7 @@ import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.TenantRepository;
 import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.service.HouseService;
+import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -59,6 +60,7 @@ public class HouseServiceImpl implements HouseService {
     @Override
     @Transactional
     public HouseResponse createHouse(CreateHouseRequest request) {
+        securityUtils.requirePermission(PermissionConstants.HOUSE_CREATE);
         requireOwner();
 
         Long ownerId = securityUtils.getCurrentUserId();
@@ -74,12 +76,14 @@ public class HouseServiceImpl implements HouseService {
     @Override
     @Transactional(readOnly = true)
     public HouseResponse getHouseById(Long id) {
+        securityUtils.requirePermission(PermissionConstants.HOUSE_VIEW);
         return houseMapper.toResponse(requireOwnerOrManager(id));
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<HouseResponse> getMyHouses() {
+        securityUtils.requirePermission(PermissionConstants.HOUSE_VIEW);
         Long userId = securityUtils.getCurrentUserId();
 
         // OWNER always sees all houses within its ownership scope.
@@ -102,6 +106,7 @@ public class HouseServiceImpl implements HouseService {
     @Override
     @Transactional
     public HouseResponse updateHouse(Long id, UpdateHouseRequest request) {
+        securityUtils.requirePermission(PermissionConstants.HOUSE_UPDATE);
         requireOwner();
         House house = getOwnedHouse(id);
         Long ownerId = house.getOwner().getId();
@@ -148,6 +153,7 @@ public class HouseServiceImpl implements HouseService {
     @Override
     @Transactional
     public void deleteHouse(Long id) {
+        securityUtils.requirePermission(PermissionConstants.HOUSE_DELETE);
         requireOwner();
         House house = getOwnedHouse(id);
         houseRepository.delete(house);
@@ -156,6 +162,7 @@ public class HouseServiceImpl implements HouseService {
     @Override
     @Transactional(readOnly = true)
     public HouseSummaryResponse getHouseSummary(Long houseId) {
+        securityUtils.requirePermission(PermissionConstants.HOUSE_VIEW);
         Long ownerOfHouse = requireOwnerOrManager(houseId).getOwner().getId();
         boolean isOwner = ownerOfHouse.equals(securityUtils.getCurrentUserId());
 
@@ -190,6 +197,7 @@ public class HouseServiceImpl implements HouseService {
     @Transactional(readOnly = true)
     public PageResponse<RoomResponse> getHouseRooms(Long houseId, String search, RoomStatus status,
             Long roomTypeId, Pageable pageable) {
+        securityUtils.requirePermission(PermissionConstants.HOUSE_VIEW);
         boolean isOwner = requireOwnerOrManager(houseId).getOwner().getId()
                 .equals(securityUtils.getCurrentUserId());
 
@@ -212,6 +220,7 @@ public class HouseServiceImpl implements HouseService {
     @Override
     @Transactional(readOnly = true)
     public PageResponse<TenantResponse> getHouseTenants(Long houseId, String search, Pageable pageable) {
+        securityUtils.requirePermission(PermissionConstants.HOUSE_VIEW);
         boolean isOwner = requireOwnerOrManager(houseId).getOwner().getId()
                 .equals(securityUtils.getCurrentUserId());
 
@@ -236,6 +245,7 @@ public class HouseServiceImpl implements HouseService {
     @Transactional(readOnly = true)
     public PageResponse<RentalContractResponse> getHouseContracts(Long houseId, String search,
             RentalContractStatus status, Pageable pageable) {
+        securityUtils.requirePermission(PermissionConstants.HOUSE_VIEW);
         boolean isOwner = requireOwnerOrManager(houseId).getOwner().getId()
                 .equals(securityUtils.getCurrentUserId());
 

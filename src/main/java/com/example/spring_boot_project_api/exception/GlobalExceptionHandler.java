@@ -313,6 +313,12 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.NOT_FOUND, "Resource not found", request);
     }
 
+    @ExceptionHandler(AssistantDisabledException.class)
+    public ResponseEntity<ErrorResponse> handleAssistantDisabled(AssistantDisabledException ex,
+            HttpServletRequest request) {
+        return build(HttpStatus.FORBIDDEN, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(InvalidOtpException.class)
     public ResponseEntity<ErrorResponse> handleInvalidOtp(InvalidOtpException ex,
             HttpServletRequest request) {
@@ -345,6 +351,30 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(TwoFactorException.class)
     public ResponseEntity<ErrorResponse> handleTwoFactor(TwoFactorException ex,
+            HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(HouseImportValidationException.class)
+    public ResponseEntity<ErrorResponse> handleHouseImportValidation(HouseImportValidationException ex,
+            HttpServletRequest request) {
+        Map<String, String> flat = new HashMap<>();
+        ex.getRowErrors().forEach((row, errors) ->
+                flat.put("Row " + row, String.join(". ", errors)));
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request, flat.isEmpty() ? null : flat);
+    }
+
+    @ExceptionHandler(RoomImportValidationException.class)
+    public ResponseEntity<ErrorResponse> handleRoomImportValidation(RoomImportValidationException ex,
+            HttpServletRequest request) {
+        Map<String, String> flat = new HashMap<>();
+        ex.getRowErrors().forEach((row, errors) ->
+                flat.put("Row " + row, String.join(". ", errors)));
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request, flat.isEmpty() ? null : flat);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex,
             HttpServletRequest request) {
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
     }

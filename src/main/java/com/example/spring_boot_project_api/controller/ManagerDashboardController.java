@@ -13,6 +13,7 @@ import com.example.spring_boot_project_api.dto.response.ManagerDashboardResponse
 import com.example.spring_boot_project_api.enums.InvoiceStatus;
 import com.example.spring_boot_project_api.enums.RoomStatus;
 import com.example.spring_boot_project_api.service.ManagerDashboardService;
+import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -39,6 +40,7 @@ public class ManagerDashboardController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @RequestParam(required = false) RoomStatus roomStatus,
             @RequestParam(required = false) InvoiceStatus paymentStatus) {
+        securityUtils.requirePermission(PermissionConstants.DASHBOARD_VIEW);
         requireOwnerOrManager();
         return managerDashboardService.getDashboard(houseId, fromDate, toDate, roomStatus, paymentStatus);
     }

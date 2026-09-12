@@ -31,6 +31,7 @@ import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.service.TenantService;
+import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -49,6 +50,7 @@ public class TenantServiceImpl implements TenantService {
     @Override
     @Transactional
     public TenantResponse createTenant(CreateTenantRequest request) {
+        securityUtils.requirePermission(PermissionConstants.TENANT_CREATE);
         User owner = getCurrentOwner();
 
         // The user link is optional: a tenant profile can exist without a login account.
@@ -79,6 +81,7 @@ public class TenantServiceImpl implements TenantService {
     @Override
     @Transactional(readOnly = true)
     public PageResponse<TenantResponse> getMyTenants(String search, TenantStatus status, Pageable pageable) {
+        securityUtils.requirePermission(PermissionConstants.TENANT_VIEW);
         Pageable capped = PageRequest.of(pageable.getPageNumber(),
                 Math.min(pageable.getPageSize(), MAX_LIST_SIZE),
                 pageable.getSort());
@@ -106,6 +109,7 @@ public class TenantServiceImpl implements TenantService {
     @Override
     @Transactional(readOnly = true)
     public TenantSummaryResponse getMyTenantsSummary() {
+        securityUtils.requirePermission(PermissionConstants.TENANT_VIEW);
         List<Object[]> rows;
         if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER) && !securityUtils.hasRole(SecurityUtils.ROLE_OWNER)) {
             List<Long> houseIds = houseAccessService.getAccessibleHouseIds();
@@ -122,12 +126,14 @@ public class TenantServiceImpl implements TenantService {
     @Override
     @Transactional(readOnly = true)
     public TenantResponse getTenantById(Long id) {
+        securityUtils.requirePermission(PermissionConstants.TENANT_VIEW);
         return tenantMapper.toResponse(getAccessibleTenant(id));
     }
 
     @Override
     @Transactional
     public TenantResponse updateTenant(Long id, UpdateTenantRequest request) {
+        securityUtils.requirePermission(PermissionConstants.TENANT_UPDATE);
         Tenant tenant = getAccessibleTenant(id);
 
         if (request.phone() != null) {
@@ -178,6 +184,7 @@ public class TenantServiceImpl implements TenantService {
     @Override
     @Transactional
     public void deactivateTenant(Long id) {
+        securityUtils.requirePermission(PermissionConstants.TENANT_MANAGE);
         Tenant tenant = getAccessibleTenant(id);
         tenant.setStatus(TenantStatus.INACTIVE);
         tenantRepository.save(tenant);

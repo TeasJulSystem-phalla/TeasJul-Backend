@@ -18,6 +18,8 @@ public class PaymentMapper {
                 payment.getTransactionId(),
                 payment.getAmount(),
                 payment.getCurrency(),
+                payment.getExchangeRate(),
+                payment.getExchangeRateTo(),
                 payment.getStatus(),
                 payment.getQrCode(),
                 payment.getPaidAt(),

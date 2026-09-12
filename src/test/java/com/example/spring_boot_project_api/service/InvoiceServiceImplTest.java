@@ -84,6 +84,7 @@ class InvoiceServiceImplTest {
     @Mock private UserHouseAccessRepository userHouseAccessRepository;
     @Mock private SecurityUtils securityUtils;
     @Mock private NotificationService notificationService;
+    @Mock private OwnerSettingService ownerSettingService;
 
     @InjectMocks private InvoiceServiceImpl invoiceService;
 
@@ -108,6 +109,9 @@ class InvoiceServiceImplTest {
                 .endDate(LocalDate.of(2027, 1, 1))
                 .monthlyRent(new BigDecimal("150.00"))
                 .dueDay(5).status(RentalContractStatus.ACTIVE).build();
+        when(ownerSettingService.getExchangeRate(any())).thenReturn(new BigDecimal("4100"));
+        when(ownerSettingService.getInvoicePrefix(any())).thenReturn("INV");
+        when(ownerSettingService.getInvoiceDefaultDueDays(any())).thenReturn(5);
     }
 
     @AfterEach
@@ -368,7 +372,7 @@ class InvoiceServiceImplTest {
                             in.getContractId(), "CT", null, null, null, null, null, null,
                             in.getBillingYear(), in.getBillingMonth(), in.getDueDate(),
                             in.getSubtotal(), in.getDiscount(), in.getLateFee(),
-                            in.getTotalAmount(), in.getStatus(), null, null, List.of());
+                            in.getTotalAmount(), in.getStatus(), null, null, null, null, List.of());
                 });
 
         // Invoice number counting

@@ -16,6 +16,8 @@ public record PaymentResponse(
         String transactionId,
         BigDecimal amount,
         String currency,
+        BigDecimal exchangeRate,
+        String exchangeRateTo,
         PaymentStatus status,
         String qrCode,
         LocalDateTime paidAt,

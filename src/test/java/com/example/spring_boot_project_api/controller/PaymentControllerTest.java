@@ -86,7 +86,7 @@ class PaymentControllerTest {
     void createPayment_created_with_valid_token() throws Exception {
         PaymentResponse response = new PaymentResponse(
                 1L, 10L, 1L, "KHQR", "PAY-20260904-000001", "PAY20260904000001",
-                new BigDecimal("250.00"), "USD", PaymentStatus.PENDING,
+                new BigDecimal("250.00"), "USD", null, "KHR", PaymentStatus.PENDING,
                 "000201010212...", null, LocalDateTime.now());
 
         when(paymentService.createPayment(any())).thenReturn(response);

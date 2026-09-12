@@ -24,6 +24,9 @@ public interface UserRoleRepository extends JpaRepository<UserRole, UserRoleId> 
             "JOIN ur.role r WHERE r.code = :code")
     java.util.List<User> findUsersByRoleCode(@Param("code") String code);
 
+    @Query("SELECT ur.role.id FROM UserRole ur WHERE ur.user.id = :userId")
+    List<Long> findRoleIdsByUserId(@Param("userId") Long userId);
+
     List<UserRole> findByUserId(Long userId);
 
     void deleteByUserIdAndRoleId(Long userId, Long roleId);

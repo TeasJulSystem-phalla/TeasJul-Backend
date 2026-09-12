@@ -24,6 +24,7 @@ import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.repository.UserRoleRepository;
 import com.example.spring_boot_project_api.service.UserHouseAccessService;
+import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -46,6 +47,7 @@ public class UserHouseAccessServiceImpl implements UserHouseAccessService {
     @Override
     @Transactional
     public UserHouseAccessResponse grantAccess(Long houseId, GrantHouseAccessRequest request) {
+        securityUtils.requirePermission(PermissionConstants.HOUSE_ACCESS_MANAGE);
         requireOwner();
 
         House house = getOwnedHouse(houseId);
@@ -71,6 +73,7 @@ public class UserHouseAccessServiceImpl implements UserHouseAccessService {
     @Override
     @Transactional
     public void revokeAccess(Long houseId, Long userId) {
+        securityUtils.requirePermission(PermissionConstants.HOUSE_ACCESS_MANAGE);
         requireOwner();
         getOwnedHouse(houseId);
 
@@ -90,6 +93,7 @@ public class UserHouseAccessServiceImpl implements UserHouseAccessService {
     @Override
     @Transactional(readOnly = true)
     public List<UserHouseAccessResponse> getHouseUsers(Long houseId) {
+        securityUtils.requirePermission(PermissionConstants.HOUSE_ACCESS_VIEW);
         requireOwner();
         getOwnedHouse(houseId);
 
@@ -101,6 +105,7 @@ public class UserHouseAccessServiceImpl implements UserHouseAccessService {
     @Override
     @Transactional(readOnly = true)
     public List<UserResponse> getAccessCandidates(Long houseId) {
+        securityUtils.requirePermission(PermissionConstants.HOUSE_ACCESS_VIEW);
         requireOwner();
         House house = getOwnedHouse(houseId);
         Long houseIdFinal = house.getId();
@@ -114,6 +119,7 @@ public class UserHouseAccessServiceImpl implements UserHouseAccessService {
     @Override
     @Transactional(readOnly = true)
     public List<HouseResponse> getUserHouses() {
+        securityUtils.requirePermission(PermissionConstants.HOUSE_ACCESS_VIEW);
         Long currentUserId = securityUtils.getCurrentUserId();
 
         if (securityUtils.hasRole(SecurityUtils.ROLE_OWNER)) {

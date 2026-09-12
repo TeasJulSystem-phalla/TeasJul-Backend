@@ -26,6 +26,7 @@ import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.model.UserStatus;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.UserService;
+import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -57,6 +58,7 @@ public class UserServiceImpl implements UserService, UserDetailsService {
     public UserResponse getUserById(Long id) {
         Long currentUserId = securityUtils.getCurrentUserId();
         if (!id.equals(currentUserId)) {
+            securityUtils.requirePermission(PermissionConstants.USER_VIEW);
             requireOwner();
         }
         User user = findEntityById(id);
@@ -79,6 +81,7 @@ public class UserServiceImpl implements UserService, UserDetailsService {
     @Override
     @Transactional(readOnly = true)
     public PageResponse<UserResponse> getAllUsers(String search, UserStatus status, Pageable pageable) {
+        securityUtils.requirePermission(PermissionConstants.USER_VIEW);
         requireOwner();
         Pageable capped = PageRequest.of(pageable.getPageNumber(),
                 Math.min(pageable.getPageSize(), MAX_LIST_SIZE),
@@ -94,6 +97,7 @@ public class UserServiceImpl implements UserService, UserDetailsService {
     @Override
     @Transactional(readOnly = true)
     public UserSummaryResponse getUsersSummary() {
+        securityUtils.requirePermission(PermissionConstants.USER_VIEW);
         requireOwner();
         List<Object[]> rows = userRepository.countGroupedByStatus();
         Map<String, Long> counts = new LinkedHashMap<>();
@@ -112,6 +116,7 @@ public class UserServiceImpl implements UserService, UserDetailsService {
     public UserResponse updateUser(Long id, UpdateUserRequest request) {
         Long currentUserId = securityUtils.getCurrentUserId();
         if (!id.equals(currentUserId)) {
+            securityUtils.requirePermission(PermissionConstants.USER_MANAGE);
             requireOwner();
         }
         User user = findEntityById(id);
@@ -135,6 +140,7 @@ public class UserServiceImpl implements UserService, UserDetailsService {
     @Override
     @Transactional
     public void deleteUser(Long id) {
+        securityUtils.requirePermission(PermissionConstants.USER_DELETE);
         requireOwner();
         User user = findEntityById(id);
         userRepository.delete(user);

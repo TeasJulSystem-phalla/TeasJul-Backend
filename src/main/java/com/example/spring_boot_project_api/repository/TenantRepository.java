@@ -27,6 +27,8 @@ public interface TenantRepository extends JpaRepository<Tenant, Long>, JpaSpecif
 
     Optional<Tenant> findByIdAndOwnerId(Long id, Long ownerId);
 
+    Optional<Tenant> findByOwnerIdAndPhone(Long ownerId, String phone);
+
     List<Tenant> findAllByOwnerIdOrderByCreatedAtDesc(Long ownerId);
 
     Optional<Tenant> findByUserId(Long userId);

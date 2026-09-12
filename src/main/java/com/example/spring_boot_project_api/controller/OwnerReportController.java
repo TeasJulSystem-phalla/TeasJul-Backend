@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.spring_boot_project_api.dto.response.ManagerMonthlyReportResponse;
 import com.example.spring_boot_project_api.service.ManagerReportService;
+import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -31,6 +32,7 @@ public class OwnerReportController {
             @RequestParam int year,
             @RequestParam int month,
             @RequestParam(required = false) Long houseId) {
+        securityUtils.requirePermission(PermissionConstants.REPORT_VIEW);
         requireOwner();
         return managerReportService.getMonthlyReport(year, month, houseId);
     }

@@ -18,6 +18,7 @@ import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.service.RentalContractService;
 import com.example.spring_boot_project_api.service.NotificationService;
+import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -54,6 +55,7 @@ public class RentalContractServiceImpl implements RentalContractService {
 
     @Override
     public RentalContractResponse createContract(RentalContractRequest request) {
+        securityUtils.requirePermission(PermissionConstants.CONTRACT_CREATE);
         Long currentUserId = securityUtils.getCurrentUserId();
         Room targetRoom = resolveAccessibleRoom(request.getRoomId(), currentUserId);
 
@@ -83,6 +85,7 @@ public class RentalContractServiceImpl implements RentalContractService {
     @Override
     @Transactional(readOnly = true)
     public RentalContractResponse getContractById(Long id) {
+        securityUtils.requirePermission(PermissionConstants.CONTRACT_VIEW);
         return contractMapper.toResponse(getAccessibleContract(id));
     }
 
@@ -90,6 +93,7 @@ public class RentalContractServiceImpl implements RentalContractService {
     @Transactional(readOnly = true)
     public PageResponse<RentalContractResponse> getContractsByOwner(Long ownerId, String search,
             RentalContractStatus status, Pageable pageable) {
+        securityUtils.requirePermission(PermissionConstants.CONTRACT_VIEW);
         Long currentUserId = securityUtils.getCurrentUserId();
         boolean manager = securityUtils.hasRole(SecurityUtils.ROLE_MANAGER);
 
@@ -119,6 +123,7 @@ public class RentalContractServiceImpl implements RentalContractService {
     @Override
     @Transactional(readOnly = true)
     public List<RentalContractResponse> getContractsByRoom(Long roomId) {
+        securityUtils.requirePermission(PermissionConstants.CONTRACT_VIEW);
         Long currentUserId = securityUtils.getCurrentUserId();
         Room room = resolveAccessibleRoom(roomId, currentUserId);
         return contractRepository.findByOwnerIdAndRoomId(room.getOwnerId(), roomId)
@@ -136,6 +141,7 @@ public class RentalContractServiceImpl implements RentalContractService {
     @Override
     @Transactional(readOnly = true)
     public ContractSummaryResponse getContractsSummary() {
+        securityUtils.requirePermission(PermissionConstants.CONTRACT_VIEW);
         Long currentUserId = securityUtils.getCurrentUserId();
         boolean manager = securityUtils.hasRole(SecurityUtils.ROLE_MANAGER);
 
@@ -174,6 +180,7 @@ public class RentalContractServiceImpl implements RentalContractService {
 
     @Override
     public RentalContractResponse updateContract(Long id, RentalContractRequest request) {
+        securityUtils.requirePermission(PermissionConstants.CONTRACT_UPDATE);
         RentalContract existingContract = getAccessibleContract(id);
         Long currentUserId = securityUtils.getCurrentUserId();
         Room targetRoom = resolveAccessibleRoom(request.getRoomId(), currentUserId);
@@ -212,6 +219,7 @@ public class RentalContractServiceImpl implements RentalContractService {
 
     @Override
     public RentalContractResponse updateStatus(Long id, RentalContractStatus status) {
+        securityUtils.requirePermission(PermissionConstants.CONTRACT_UPDATE);
         RentalContract contract = getAccessibleContract(id);
         contract.setStatus(status);
         RentalContract saved = contractRepository.save(contract);
@@ -221,6 +229,7 @@ public class RentalContractServiceImpl implements RentalContractService {
 
     @Override
     public void deleteContract(Long id) {
+        securityUtils.requirePermission(PermissionConstants.CONTRACT_DELETE);
         RentalContract contract = getAccessibleContract(id);
         Long roomId = contract.getRoomId();
         contractRepository.delete(contract);

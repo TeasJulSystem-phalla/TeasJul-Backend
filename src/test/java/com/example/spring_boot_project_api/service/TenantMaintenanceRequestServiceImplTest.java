@@ -50,6 +50,7 @@ import com.example.spring_boot_project_api.repository.TenantRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.impl.MaintenanceRequestServiceImpl;
 import com.example.spring_boot_project_api.service.impl.TenantContextResolver;
+import com.example.spring_boot_project_api.util.SecurityUtils;
 
 @ExtendWith(MockitoExtension.class)
 class TenantMaintenanceRequestServiceImplTest {
@@ -72,6 +73,8 @@ class TenantMaintenanceRequestServiceImplTest {
     private TenantContextResolver tenantContextResolver;
     @Mock
     private NotificationService notificationService;
+    @Mock
+    private SecurityUtils securityUtils;
 
     @InjectMocks
     private MaintenanceRequestServiceImpl maintenanceRequestService;

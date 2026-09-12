@@ -33,6 +33,7 @@ import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.repository.UtilityRateRepository;
 import com.example.spring_boot_project_api.repository.UtilityTypeRepository;
 import com.example.spring_boot_project_api.service.UtilityRateService;
+import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import jakarta.persistence.criteria.Predicate;
@@ -53,6 +54,7 @@ public class UtilityRateServiceImpl implements UtilityRateService {
     @Override
     @Transactional
     public UtilityRateResponse createRate(CreateUtilityRateRequest request) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_CREATE);
         User owner = getCurrentOwner();
 
         if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
@@ -83,6 +85,7 @@ public class UtilityRateServiceImpl implements UtilityRateService {
     public PageResponse<UtilityRateResponse> getRates(Long houseId, Long utilityTypeId,
             UtilityRateStatus status, LocalDate effectiveFrom, LocalDate effectiveTo,
             Pageable pageable) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_VIEW);
         Long currentOwnerId = getCurrentOwner().getId();
         List<Long> scopedOwnerIds;
         final List<Long> scopedHouseIds;
@@ -130,12 +133,14 @@ public class UtilityRateServiceImpl implements UtilityRateService {
     @Override
     @Transactional(readOnly = true)
     public UtilityRateResponse getRateById(Long id) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_VIEW);
         return rateMapper.toResponse(getOwnedRate(id));
     }
 
     @Override
     @Transactional
     public UtilityRateResponse updateRate(Long id, UpdateUtilityRateRequest request) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_UPDATE);
         UtilityRate rate = getOwnedRate(id);
 
         Long effectiveHouseId = request.houseId() != null ? request.houseId() : rate.getHouseId();
@@ -169,6 +174,7 @@ public class UtilityRateServiceImpl implements UtilityRateService {
     @Override
     @Transactional
     public void deactivateRate(Long id) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_UPDATE);
         UtilityRate rate = getOwnedRate(id);
         rate.setStatus(UtilityRateStatus.INACTIVE);
         rateRepository.save(rate);

@@ -1,5 +1,6 @@
 package com.example.spring_boot_project_api.repository;
 
+import java.util.Collection;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,6 +15,8 @@ public interface RolePermissionRepository extends JpaRepository<RolePermission, 
     boolean existsByRoleIdAndPermissionId(Long roleId, Long permissionId);
 
     List<RolePermission> findByRoleId(Long roleId);
+
+    boolean existsByRoleIdInAndPermission_Code(Collection<Long> roleIds, String code);
 
     void deleteByRoleId(Long roleId);
 

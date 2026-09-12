@@ -72,6 +72,8 @@ import com.example.spring_boot_project_api.repository.UtilityTypeRepository;
 import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.service.InvoiceService;
 import com.example.spring_boot_project_api.service.NotificationService;
+import com.example.spring_boot_project_api.service.OwnerSettingService;
+import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import jakarta.persistence.criteria.Predicate;
@@ -101,12 +103,14 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final SecurityUtils securityUtils;
     private final HouseAccessService houseAccessService;
     private final NotificationService notificationService;
+    private final OwnerSettingService ownerSettingService;
 
     // ---- Preview ------------------------------------------------------
 
     @Override
     @Transactional(readOnly = true)
     public InvoicePreviewResponse previewInvoice(GenerateInvoiceRequest request) {
+        securityUtils.requirePermission(PermissionConstants.INVOICE_CREATE);
         ContractBilling ctx = buildBillingContext(request);
         List<InvoiceItemResponse> items = computeItems(ctx, request.billingYear(), request.billingMonth());
         BigDecimal subtotal = itemsSubtotal(items);
@@ -125,7 +129,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                         : null,
                 request.billingYear(),
                 request.billingMonth(),
-                resolveDueDate(request, ctx.contract()),
+                resolveDueDate(request, ctx.contract(), ctx.owner().getId()),
                 items,
                 subtotal,
                 ctx.discount(),
@@ -137,6 +141,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     @Override
     @Transactional
     public InvoiceResponse generateMonthlyInvoice(GenerateInvoiceRequest request) {
+        securityUtils.requirePermission(PermissionConstants.INVOICE_CREATE);
         ContractBilling ctx = buildBillingContext(request);
 
         if (invoiceRepository.existsByContractIdAndBillingYearAndBillingMonth(
@@ -156,11 +161,13 @@ public class InvoiceServiceImpl implements InvoiceService {
                 .contractId(ctx.contract().getId())
                 .billingYear(request.billingYear())
                 .billingMonth(request.billingMonth())
-                .dueDate(resolveDueDate(request, ctx.contract()))
+                .dueDate(resolveDueDate(request, ctx.contract(), ctx.owner().getId()))
                 .subtotal(subtotal)
                 .discount(ctx.discount())
                 .lateFee(BigDecimal.ZERO)
                 .totalAmount(total)
+                .exchangeRate(ownerSettingService.getExchangeRate(ctx.owner().getId()))
+                .exchangeRateCurrency("KHR")
                 .status(InvoiceStatus.PENDING)
                 .build();
 
@@ -188,6 +195,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     @Override
     @Transactional
     public BulkGenerateInvoiceResponse generateBulkInvoices(BulkGenerateInvoiceRequest request) {
+        securityUtils.requirePermission(PermissionConstants.INVOICE_CREATE);
         User owner = getCurrentOwner();
         Long ownerId = owner.getId();
         verifyOwnerOrManagerRole();
@@ -246,6 +254,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     public PageResponse<InvoiceResponse> getInvoices(Long houseId, String search, InvoiceStatus status,
             Integer billingYear, Integer billingMonth, Long tenantId, LocalDate fromDate,
             LocalDate toDate, Pageable pageable) {
+        securityUtils.requirePermission(PermissionConstants.INVOICE_VIEW);
         Long currentUserId = securityUtils.getCurrentUserId();
 
         List<Long> accessibleHouseIds = houseAccessService.getAccessibleHouseIds();
@@ -476,6 +485,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     @Override
     @Transactional(readOnly = true)
     public InvoiceResponse getInvoiceById(Long id) {
+        securityUtils.requirePermission(PermissionConstants.INVOICE_VIEW);
         Invoice invoice = getAccessibleInvoice(id);
         return invoiceMapper.toResponse(invoice, resolveDetails(invoice));
     }
@@ -483,6 +493,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     @Override
     @Transactional
     public InvoiceResponse addItem(Long id, AddInvoiceItemRequest request) {
+        securityUtils.requirePermission(PermissionConstants.INVOICE_UPDATE);
         Invoice invoice = getAccessibleInvoice(id);
         if (invoice.getStatus() == InvoiceStatus.PAID || invoice.getStatus() == InvoiceStatus.CANCELLED) {
             throw new InvalidInvoiceOperationException(
@@ -510,6 +521,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     @Override
     @Transactional
     public InvoiceResponse updateStatus(Long id, InvoiceStatus status) {
+        securityUtils.requirePermission(PermissionConstants.INVOICE_UPDATE);
         if (status == InvoiceStatus.CANCELLED) {
             cancelInvoice(id);
             return getInvoiceById(id);
@@ -543,6 +555,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     @Override
     @Transactional
     public InvoiceResponse recordPayment(Long id, BigDecimal paidAmount) {
+        securityUtils.requirePermission(PermissionConstants.INVOICE_MANAGE);
         Invoice invoice = getAccessibleInvoice(id);
         if (invoice.getStatus() == InvoiceStatus.CANCELLED) {
             throw new InvalidInvoiceOperationException("A cancelled invoice cannot receive payment");
@@ -832,17 +845,18 @@ public class InvoiceServiceImpl implements InvoiceService {
 
     private String generateInvoiceNo(Long ownerId, int year, int month) {
         long seq = invoiceRepository.count() + 1;
-        return String.format("INV-%04d-%04d", year, seq);
+        String prefix = ownerSettingService.getInvoicePrefix(ownerId);
+        return String.format("%s-%04d-%04d", prefix, year, seq);
     }
 
-    private LocalDate resolveDueDate(GenerateInvoiceRequest request, RentalContract contract) {
+    private LocalDate resolveDueDate(GenerateInvoiceRequest request, RentalContract contract, Long ownerId) {
         if (request.dueDate() != null) return request.dueDate();
-        return computeDueDate(contract, request.billingYear(), request.billingMonth());
+        return computeDueDate(contract, request.billingYear(), request.billingMonth(), ownerId);
     }
 
-    private LocalDate computeDueDate(RentalContract contract, int year, int month) {
+    private LocalDate computeDueDate(RentalContract contract, int year, int month, Long ownerId) {
         int dueDay = (contract.getDueDay() != null && contract.getDueDay() > 0)
-                ? contract.getDueDay() : 5;
+                ? contract.getDueDay() : ownerSettingService.getInvoiceDefaultDueDays(ownerId);
         int lastDay = YearMonth.of(year, month).lengthOfMonth();
         return LocalDate.of(year, month, Math.min(dueDay, lastDay));
     }

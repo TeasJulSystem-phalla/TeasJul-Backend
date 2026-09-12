@@ -26,6 +26,7 @@ import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.repository.UtilityTypeRepository;
 import com.example.spring_boot_project_api.service.UtilityTypeService;
+import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import jakarta.persistence.criteria.Predicate;
@@ -44,6 +45,7 @@ public class UtilityTypeServiceImpl implements UtilityTypeService {
     @Override
     @Transactional
     public UtilityTypeResponse createType(CreateUtilityTypeRequest request) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_CREATE);
         User owner = getCurrentOwner();
 
         validateUniqueFields(owner.getId(), request.name(), request.code(), null);
@@ -58,6 +60,7 @@ public class UtilityTypeServiceImpl implements UtilityTypeService {
     @Transactional(readOnly = true)
     public PageResponse<UtilityTypeResponse> getTypes(String search, UtilityTypeStatus status,
             Pageable pageable) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_VIEW);
         List<Long> scopedOwnerIds = resolveScopedOwnerIds();
         if (scopedOwnerIds.isEmpty()) {
             return PageResponse.of(List.of(), pageable.getPageNumber(), pageable.getPageSize(), 0, 0);
@@ -84,12 +87,14 @@ public class UtilityTypeServiceImpl implements UtilityTypeService {
     @Override
     @Transactional(readOnly = true)
     public UtilityTypeResponse getTypeById(Long id) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_VIEW);
         return typeMapper.toResponse(getOwnedType(id));
     }
 
     @Override
     @Transactional
     public UtilityTypeResponse updateType(Long id, UpdateUtilityTypeRequest request) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_UPDATE);
         UtilityType type = getOwnedType(id);
         Long ownerId = type.getOwner().getId();
 
@@ -114,6 +119,7 @@ public class UtilityTypeServiceImpl implements UtilityTypeService {
     @Override
     @Transactional
     public void deactivateType(Long id) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_UPDATE);
         UtilityType type = getOwnedType(id);
         type.setStatus(UtilityTypeStatus.INACTIVE);
         typeRepository.save(type);

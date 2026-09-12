@@ -26,6 +26,7 @@ import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.service.RoomService;
+import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -44,6 +45,7 @@ public class RoomServiceImpl implements RoomService {
     @Override
     @Transactional
     public RoomResponse createRoom(RoomRepuest request) {
+        securityUtils.requirePermission(PermissionConstants.ROOM_CREATE);
         Long currentUserId = securityUtils.getCurrentUserId();
         Long ownerId = resolveHouseOwnerId(request.getHouseId(), currentUserId);
 
@@ -59,6 +61,7 @@ public class RoomServiceImpl implements RoomService {
     @Override
     @Transactional(readOnly = true)
     public RoomResponse getRoomById(Long id) {
+        securityUtils.requirePermission(PermissionConstants.ROOM_VIEW);
         Long currentUserId = securityUtils.getCurrentUserId();
         Room room = getAccessibleRoom(id);
         RoomTenantResponse tenant = getActiveTenantForRoom(room);
@@ -68,6 +71,7 @@ public class RoomServiceImpl implements RoomService {
     @Override
     @Transactional(readOnly = true)
     public List<RoomResponse> getAllRooms() {
+        securityUtils.requirePermission(PermissionConstants.ROOM_VIEW);
         Long currentUserId = securityUtils.getCurrentUserId();
         List<Room> rooms;
 
@@ -90,6 +94,7 @@ public class RoomServiceImpl implements RoomService {
     @Override
     @Transactional(readOnly = true)
     public List<RoomResponse> getRoomsByHouse(Long houseId) {
+        securityUtils.requirePermission(PermissionConstants.ROOM_VIEW);
         Long currentUserId = securityUtils.getCurrentUserId();
         verifyHouseAccess(houseId, currentUserId);
         List<Room> rooms = roomRepository.findByHouseId(houseId);
@@ -102,6 +107,7 @@ public class RoomServiceImpl implements RoomService {
     @Override
     @Transactional
     public RoomResponse updateRoom(Long id, RoomRepuest request) {
+        securityUtils.requirePermission(PermissionConstants.ROOM_UPDATE);
         Room existing = getAccessibleRoom(id);
         Long currentUserId = securityUtils.getCurrentUserId();
 
@@ -144,6 +150,7 @@ public class RoomServiceImpl implements RoomService {
     @Override
     @Transactional
     public void deleteRoom(Long id) {
+        securityUtils.requirePermission(PermissionConstants.ROOM_DELETE);
         Room existing = getAccessibleRoom(id);
         roomRepository.delete(existing);
     }

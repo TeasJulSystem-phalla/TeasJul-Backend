@@ -86,6 +86,12 @@ public class Invoice {
     @Column(name = "status", nullable = false, columnDefinition = "ENUM('DRAFT','PENDING','PARTIAL','PAID','OVERDUE','CANCELLED') DEFAULT 'DRAFT'")
     private InvoiceStatus status = InvoiceStatus.DRAFT;
 
+    @Column(name = "exchange_rate", precision = 12, scale = 4)
+    private BigDecimal exchangeRate;
+
+    @Column(name = "exchange_rate_currency", length = 3)
+    private String exchangeRateCurrency;
+
     @OneToMany(mappedBy = "invoice", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @OrderBy("id ASC")
     @Builder.Default

@@ -47,6 +47,7 @@ import com.example.spring_boot_project_api.repository.UtilityReadingRepository;
 import com.example.spring_boot_project_api.repository.UtilityTypeRepository;
 import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.service.UtilityReadingService;
+import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import jakarta.persistence.criteria.Predicate;
@@ -70,6 +71,7 @@ public class UtilityReadingServiceImpl implements UtilityReadingService {
     @Override
     @Transactional
     public UtilityReadingResponse createReading(CreateUtilityReadingRequest request) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_CREATE);
         UtilityMeter meter = resolveMeter(request.meterId());
 
         if (meter.getStatus() != UtilityMeterStatus.ACTIVE) {
@@ -107,6 +109,7 @@ public class UtilityReadingServiceImpl implements UtilityReadingService {
     @Transactional(readOnly = true)
     public PageResponse<UtilityReadingResponse> getReadings(Long meterId, LocalDate fromDate,
             LocalDate toDate, Pageable pageable) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_VIEW);
         List<Long> accessibleHouseIds = houseAccessService.getAccessibleHouseIds();
 
         Specification<UtilityReading> spec = (root, query, cb) -> {
@@ -130,6 +133,7 @@ public class UtilityReadingServiceImpl implements UtilityReadingService {
     @Override
     @Transactional(readOnly = true)
     public UtilityReadingResponse getReadingById(Long id) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_VIEW);
         UtilityReading reading = readingRepository.findById(id)
                 .orElseThrow(() -> UtilityReadingNotFoundException.forId(id));
 
@@ -141,6 +145,7 @@ public class UtilityReadingServiceImpl implements UtilityReadingService {
     @Override
     @Transactional(readOnly = true)
     public List<MonthlyReadingRowResponse> getMonthlySheet(Long houseId, Integer year, Integer month) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_VIEW);
         verifyHouseAccess(houseId);
 
         LocalDate periodStart = LocalDate.of(year, month, 1);
@@ -201,6 +206,7 @@ public class UtilityReadingServiceImpl implements UtilityReadingService {
     @Override
     @Transactional
     public BulkUtilityReadingResponse createReadingsBulk(MonthlyReadingBulkRequest request) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_CREATE);
         verifyHouseAccess(request.houseId());
 
         LocalDate periodStart = LocalDate.of(request.billingYear(), request.billingMonth(), 1);

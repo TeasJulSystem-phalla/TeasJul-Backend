@@ -23,6 +23,7 @@ import com.example.spring_boot_project_api.repository.AmenityRepository;
 import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.AmenityService;
+import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -40,6 +41,7 @@ public class AmenityServiceImpl implements AmenityService {
     @Override
     @Transactional
     public AmenityResponse createAmenity(AmenityRequest request) {
+        securityUtils.requirePermission(PermissionConstants.AMENITY_CREATE);
         Long ownerId = getCurrentUser().getId();
 
         validateUniqueFields(ownerId, request.name(), request.code(), null);
@@ -53,12 +55,14 @@ public class AmenityServiceImpl implements AmenityService {
     @Override
     @Transactional(readOnly = true)
     public AmenityResponse getAmenityById(Long id) {
+        securityUtils.requirePermission(PermissionConstants.AMENITY_VIEW);
         return amenityMapper.toResponse(getOwnedAmenity(id));
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<AmenityResponse> getMyAmenities() {
+        securityUtils.requirePermission(PermissionConstants.AMENITY_VIEW);
         List<Long> ownerIds = resolveScopedOwnerIds();
         return amenityRepository.findByOwnerIdInOrderByCreatedAtDesc(ownerIds).stream()
                 .map(amenityMapper::toResponse)
@@ -68,6 +72,7 @@ public class AmenityServiceImpl implements AmenityService {
     @Override
     @Transactional(readOnly = true)
     public List<AmenityResponse> getMyAmenitiesByStatus(AmenityStatus status) {
+        securityUtils.requirePermission(PermissionConstants.AMENITY_VIEW);
         List<Long> ownerIds = resolveScopedOwnerIds();
         return amenityRepository.findByOwnerIdInAndStatus(ownerIds, status).stream()
                 .map(amenityMapper::toResponse)
@@ -77,6 +82,7 @@ public class AmenityServiceImpl implements AmenityService {
     @Override
     @Transactional
     public AmenityResponse updateAmenity(Long id, UpdateAmenityRequest request) {
+        securityUtils.requirePermission(PermissionConstants.AMENITY_UPDATE);
         Amenity amenity = getOwnedAmenity(id);
         Long ownerId = amenity.getOwnerId();
 
@@ -104,6 +110,7 @@ public class AmenityServiceImpl implements AmenityService {
     @Override
     @Transactional
     public void deleteAmenity(Long id) {
+        securityUtils.requirePermission(PermissionConstants.AMENITY_DELETE);
         Amenity amenity = getOwnedAmenity(id);
         amenityRepository.delete(amenity);
     }

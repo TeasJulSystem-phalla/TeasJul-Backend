@@ -72,6 +72,8 @@ public class InvoiceMapper {
                 invoice.getLateFee(),
                 invoice.getTotalAmount(),
                 invoice.getStatus(),
+                invoice.getExchangeRate(),
+                invoice.getExchangeRateCurrency(),
                 invoice.getCreatedAt(),
                 invoice.getUpdatedAt(),
                 items);

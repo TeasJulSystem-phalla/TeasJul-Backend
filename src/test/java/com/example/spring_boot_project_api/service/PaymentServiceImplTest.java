@@ -91,6 +91,8 @@ class PaymentServiceImplTest {
     @Mock private HouseRepository houseRepository;
     @Mock private TenantRepository tenantRepository;
     @Mock private NotificationService notificationService;
+    @Mock private OwnerSettingService ownerSettingService;
+    @Mock private TelegramService telegramService;
 
     @InjectMocks private PaymentServiceImpl paymentService;
 
@@ -132,6 +134,7 @@ class PaymentServiceImplTest {
         when(payWayConfig.getMerchantId()).thenReturn("test.merchant");
         when(payWayConfig.getApiKey()).thenReturn("test-api-key");
         when(payWayConfig.getCallbackUrl()).thenReturn("https://callback.test/pay");
+        when(ownerSettingService.getExchangeRate(any())).thenReturn(new BigDecimal("4100"));
     }
 
     @AfterEach
@@ -165,7 +168,8 @@ class PaymentServiceImplTest {
             Payment p = inv.getArgument(0);
             return new PaymentResponse(p.getId(), p.getInvoiceId(), p.getPaymentMethod().getId(),
                     p.getPaymentMethod().getName(), p.getPaymentNo(), p.getTransactionId(),
-                    p.getAmount(), p.getCurrency(), p.getStatus(), p.getQrCode(),
+                    p.getAmount(), p.getCurrency(), p.getExchangeRate(), p.getExchangeRateTo(),
+                    p.getStatus(), p.getQrCode(),
                     p.getPaidAt(), p.getCreatedAt());
         });
         return saved;
@@ -384,7 +388,8 @@ class PaymentServiceImplTest {
             Payment p = inv.getArgument(0);
             return new PaymentResponse(p.getId(), p.getInvoiceId(), p.getPaymentMethod().getId(),
                     p.getPaymentMethod().getName(), p.getPaymentNo(), p.getTransactionId(),
-                    p.getAmount(), p.getCurrency(), p.getStatus(), p.getQrCode(),
+                    p.getAmount(), p.getCurrency(), p.getExchangeRate(), p.getExchangeRateTo(),
+                    p.getStatus(), p.getQrCode(),
                     p.getPaidAt(), p.getCreatedAt());
         });
 
@@ -478,7 +483,8 @@ class PaymentServiceImplTest {
             Payment p = inv.getArgument(0);
             return new PaymentResponse(p.getId(), p.getInvoiceId(), p.getPaymentMethod().getId(),
                     p.getPaymentMethod().getName(), p.getPaymentNo(), p.getTransactionId(),
-                    p.getAmount(), p.getCurrency(), p.getStatus(), p.getQrCode(),
+                    p.getAmount(), p.getCurrency(), p.getExchangeRate(), p.getExchangeRateTo(),
+                    p.getStatus(), p.getQrCode(),
                     p.getPaidAt(), p.getCreatedAt());
         });
 
@@ -900,7 +906,8 @@ class PaymentServiceImplTest {
             Payment p = inv.getArgument(0);
             return new PaymentResponse(p.getId(), p.getInvoiceId(), p.getPaymentMethod().getId(),
                     p.getPaymentMethod().getName(), p.getPaymentNo(), p.getTransactionId(),
-                    p.getAmount(), p.getCurrency(), p.getStatus(), p.getQrCode(),
+                    p.getAmount(), p.getCurrency(), p.getExchangeRate(), p.getExchangeRateTo(),
+                    p.getStatus(), p.getQrCode(),
                     p.getPaidAt(), p.getCreatedAt());
         });
     }

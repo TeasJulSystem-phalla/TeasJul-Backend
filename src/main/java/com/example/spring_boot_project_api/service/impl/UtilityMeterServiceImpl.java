@@ -36,6 +36,7 @@ import com.example.spring_boot_project_api.repository.UtilityMeterRepository;
 import com.example.spring_boot_project_api.repository.UtilityTypeRepository;
 import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.service.UtilityMeterService;
+import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import jakarta.persistence.criteria.Predicate;
@@ -58,6 +59,7 @@ public class UtilityMeterServiceImpl implements UtilityMeterService {
     @Override
     @Transactional
     public UtilityMeterResponse createMeter(CreateUtilityMeterRequest request) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_CREATE);
         User owner = getCurrentOwner();
 
         if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
@@ -89,6 +91,7 @@ public class UtilityMeterServiceImpl implements UtilityMeterService {
     @Transactional(readOnly = true)
     public PageResponse<UtilityMeterResponse> getMeters(String search, Long houseId, Long roomId,
             Long utilityTypeId, UtilityMeterStatus status, Pageable pageable) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_VIEW);
         List<Long> accessibleHouseIds = houseAccessService.getAccessibleHouseIds();
 
         Specification<UtilityMeter> spec = (root, query, cb) -> {
@@ -119,12 +122,14 @@ public class UtilityMeterServiceImpl implements UtilityMeterService {
     @Override
     @Transactional(readOnly = true)
     public UtilityMeterResponse getMeterById(Long id) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_VIEW);
         return meterMapper.toResponse(getOwnedMeter(id));
     }
 
     @Override
     @Transactional
     public UtilityMeterResponse updateMeter(Long id, UpdateUtilityMeterRequest request) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_UPDATE);
         UtilityMeter meter = getOwnedMeter(id);
 
         Long effectiveHouseId = request.houseId() != null ? request.houseId() : meter.getHouseId();
@@ -160,6 +165,7 @@ public class UtilityMeterServiceImpl implements UtilityMeterService {
     @Override
     @Transactional
     public void deactivateMeter(Long id) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_UPDATE);
         UtilityMeter meter = getOwnedMeter(id);
         meter.setStatus(UtilityMeterStatus.INACTIVE);
         meterRepository.save(meter);
