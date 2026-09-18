@@ -26,6 +26,7 @@ import com.example.spring_boot_project_api.exception.NotificationNotFoundExcepti
 import com.example.spring_boot_project_api.mapper.NotificationMapper;
 import com.example.spring_boot_project_api.model.ContractTenant;
 import com.example.spring_boot_project_api.model.Invoice;
+import com.example.spring_boot_project_api.model.Listing;
 import com.example.spring_boot_project_api.model.MaintenanceRequest;
 import com.example.spring_boot_project_api.model.Notification;
 import com.example.spring_boot_project_api.model.Payment;
@@ -42,6 +43,7 @@ import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.TenantRepository;
 import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
+import com.example.spring_boot_project_api.repository.UserRoleRepository;
 import com.example.spring_boot_project_api.service.NotificationService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
@@ -77,12 +79,58 @@ public class NotificationServiceImpl implements NotificationService {
     private final NotificationMapper notificationMapper;
     private final SecurityUtils securityUtils;
     private final UserRepository userRepository;
+    private final UserRoleRepository userRoleRepository;
     private final TenantRepository tenantRepository;
     private final ContractTenantRepository contractTenantRepository;
     private final RentalContractRepository rentalContractRepository;
     private final RoomRepository roomRepository;
     private final InvoiceRepository invoiceRepository;
     private final UserHouseAccessRepository userHouseAccessRepository;
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifyPropertySubmitted(Room room) {
+        try {
+            if (room == null || room.getId() == null) {
+                return;
+            }
+            String roomLabel = room.getName() != null && !room.getName().isBlank()
+                    ? room.getName()
+                    : room.getRoomNumber() != null ? "Room " + room.getRoomNumber() : "Room " + room.getId();
+            String title = "New Property Submission";
+            String message = String.format("Owner submitted %s for approval.", roomLabel);
+            Map<String, Object> data = Map.of(
+                    "entity", "room",
+                    "id", room.getId(),
+                    "referenceType", "ROOM",
+                    "referenceId", room.getId());
+            persistToAll(userIdsByRole(SecurityUtils.ROLE_SUPER_ADMIN),
+                    NotificationType.PROPERTY_SUBMITTED, title, message, data);
+        } catch (RuntimeException e) {
+            log.warn("Failed to create property-submitted notification: {}", e.getMessage());
+        }
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifyPropertySubmitted(Listing listing) {
+        try {
+            if (listing == null || listing.getId() == null) {
+                return;
+            }
+            String title = "New Property Submission";
+            String message = String.format("Owner submitted property listing #%s for approval.", listing.getId());
+            Map<String, Object> data = Map.of(
+                    "entity", "listing",
+                    "id", listing.getId(),
+                    "referenceType", "PROPERTY",
+                    "referenceId", listing.getId());
+            persistToAll(userIdsByRole(SecurityUtils.ROLE_SUPER_ADMIN),
+                    NotificationType.PROPERTY_SUBMITTED, title, message, data);
+        } catch (RuntimeException e) {
+            log.warn("Failed to create property-submitted notification: {}", e.getMessage());
+        }
+    }
 
     // ---- Reads (owner-scoped by the authenticated user) ------------------
 
@@ -314,6 +362,12 @@ public class NotificationServiceImpl implements NotificationService {
         return tenantUserIdsByContract(invoice.getContractId());
     }
 
+    private Set<Long> userIdsByRole(String roleCode) {
+        return userRoleRepository.findUsersByRoleCode(roleCode).stream()
+                .map(User::getId)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    }
+
     private Set<Long> tenantUserIdsByContract(Long contractId) {
         Set<Long> ids = new LinkedHashSet<>();
         for (ContractTenant link : contractTenantRepository.findByContractId(contractId)) {
@@ -372,12 +426,22 @@ public class NotificationServiceImpl implements NotificationService {
             return;
         }
         userRepository.findById(userId).ifPresent(user -> {
+            String referenceType = data == null ? null : String.valueOf(data.get("referenceType"));
+            Object referenceValue = data == null ? null : data.get("referenceId");
+            Long referenceId = referenceId(referenceValue);
+            if (referenceType != null && !"null".equals(referenceType) && referenceId != null
+                && notificationRepository.existsByUserIdAndTypeAndReferenceTypeAndReferenceId(
+                    userId, type, referenceType, referenceId)) {
+                return;
+            }
             Notification notification = Notification.builder()
                     .user(user)
                     .type(type)
                     .title(title)
                     .message(message)
                     .data(toJson(data))
+                .referenceType(referenceType)
+                .referenceId(referenceId)
                     .build();
             try {
                 notificationRepository.saveAndFlush(notification);
@@ -398,6 +462,16 @@ public class NotificationServiceImpl implements NotificationService {
         } catch (JsonProcessingException e) {
             return null;
         }
+    }
+
+    private Long referenceId(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return Long.valueOf(number.longValue());
+        }
+        return Long.valueOf(String.valueOf(value));
     }
 
     private void persistToAll(Collection<Long> userIds, NotificationType type, String title,

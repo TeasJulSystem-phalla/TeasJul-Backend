@@ -19,6 +19,7 @@ public class RoomUtilityMapper {
                 type.getCode(),
                 type.getBillingMethod(),
                 ru.getStatus(),
-                ru.getCreatedAt());
+                ru.getCreatedAt(),
+                Boolean.TRUE.equals(ru.getIsIncluded()));
     }
 }

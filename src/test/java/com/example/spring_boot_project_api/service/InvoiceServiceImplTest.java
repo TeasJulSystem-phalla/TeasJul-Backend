@@ -6,6 +6,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -259,6 +261,26 @@ class InvoiceServiceImplTest {
                 new GenerateInvoiceRequest(30L, 2026, 2, null, null)))
                 .isInstanceOf(InvalidInvoiceOperationException.class)
                 .hasMessageContaining("No applicable rate");
+    }
+
+    @Test
+    void includedUtilityIsSkippedWithoutRequiringTypeOrRate() {
+        authAsOwner();
+        stubBillingScene();
+        RoomUtility included = roomUtility(4L);
+        included.setIsIncluded(true);
+        when(roomUtilityRepository.findByRoomIdAndStatus(20L, UtilityTypeStatus.ACTIVE))
+                .thenReturn(List.of(included));
+
+        InvoicePreviewResponse response = invoiceService.previewInvoice(
+                new GenerateInvoiceRequest(30L, 2026, 2, null, null));
+
+        assertThat(response.items()).hasSize(1);
+        assertThat(response.items().get(0).itemType()).isEqualTo(InvoiceItemType.RENT);
+        assertThat(response.total()).isEqualByComparingTo("150.00");
+        verify(typeRepository, never()).findByIdAndOwnerId(anyLong(), anyLong());
+        verify(invoiceRepository, never()).findEffectiveRate(anyLong(), anyLong(), anyLong(),
+                any(LocalDate.class), any(UtilityRateStatus.class));
     }
 
     @Test

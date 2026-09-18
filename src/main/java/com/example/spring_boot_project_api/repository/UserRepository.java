@@ -54,6 +54,25 @@ public interface UserRepository extends JpaRepository<User, Long> {
             """)
     Page<User> findAllWithFilters(@Param("q") String q, @Param("status") UserStatus status, Pageable pageable);
 
+    /**
+     * Paginated search of users that hold the OWNER role. Optional free-text
+     * search (name, full name, email, phone, username) and status filter.
+     */
+    @Query("""
+            SELECT u FROM User u
+            WHERE EXISTS (SELECT 1 FROM UserRole ur JOIN ur.role r
+                          WHERE ur.user.id = u.id AND r.code = 'OWNER')
+              AND (:status IS NULL OR u.status = :status)
+              AND (:q IS NULL OR :q = ''
+                   OR LOWER(u.firstName) LIKE LOWER(CONCAT('%', :q, '%'))
+                   OR LOWER(u.lastName) LIKE LOWER(CONCAT('%', :q, '%'))
+                   OR LOWER(CONCAT(TRIM(u.firstName), ' ', TRIM(u.lastName))) LIKE LOWER(CONCAT('%', :q, '%'))
+                   OR LOWER(u.email) LIKE LOWER(CONCAT('%', :q, '%'))
+                   OR LOWER(u.phone) LIKE LOWER(CONCAT('%', :q, '%'))
+                   OR LOWER(u.username) LIKE LOWER(CONCAT('%', :q, '%')))
+            """)
+    Page<User> findAllOwners(@Param("q") String q, @Param("status") UserStatus status, Pageable pageable);
+
     @Query("SELECT u.status AS status, COUNT(u) AS cnt FROM User u GROUP BY u.status")
     java.util.List<Object[]> countGroupedByStatus();
 }

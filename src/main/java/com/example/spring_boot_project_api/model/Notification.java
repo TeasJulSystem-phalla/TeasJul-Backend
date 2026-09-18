@@ -55,6 +55,12 @@ public class Notification {
     @Column(name = "data", columnDefinition = "longtext")
     private String data;
 
+    @Column(name = "reference_type", length = 50)
+    private String referenceType;
+
+    @Column(name = "reference_id")
+    private Long referenceId;
+
     @Column(name = "read_at")
     private LocalDateTime readAt;
 

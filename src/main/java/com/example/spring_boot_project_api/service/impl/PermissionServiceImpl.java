@@ -90,7 +90,8 @@ public class PermissionServiceImpl implements PermissionService {
     }
 
     private void requireOwner() {
-        if (!securityUtils.hasRole(SecurityUtils.ROLE_OWNER)) {
+        if (!securityUtils.hasRole(SecurityUtils.ROLE_OWNER)
+                && !securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)) {
             throw new org.springframework.security.access.AccessDeniedException(
                     "You do not have permission to access this resource");
         }

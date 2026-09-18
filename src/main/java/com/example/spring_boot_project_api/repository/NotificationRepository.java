@@ -17,6 +17,10 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     long countByUserIdAndReadAtIsNull(Long userId);
 
+            boolean existsByUserIdAndTypeAndReferenceTypeAndReferenceId(Long userId,
+              com.example.spring_boot_project_api.enums.NotificationType type,
+              String referenceType, Long referenceId);
+
     /**
      * Marks every unread notification of the given user as read. The user id is
      * always derived from the authenticated principal, never from the request.

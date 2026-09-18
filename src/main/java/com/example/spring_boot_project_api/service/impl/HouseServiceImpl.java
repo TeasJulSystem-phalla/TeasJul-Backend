@@ -2,6 +2,8 @@ package com.example.spring_boot_project_api.service.impl;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -26,10 +28,12 @@ import com.example.spring_boot_project_api.mapper.RentalContractMapper;
 import com.example.spring_boot_project_api.mapper.RoomMapper;
 import com.example.spring_boot_project_api.mapper.TenantMapper;
 import com.example.spring_boot_project_api.model.House;
+import com.example.spring_boot_project_api.model.HouseImage;
 import com.example.spring_boot_project_api.model.RentalContract;
 import com.example.spring_boot_project_api.model.Room;
 import com.example.spring_boot_project_api.model.Tenant;
 import com.example.spring_boot_project_api.repository.ContractTenantRepository;
+import com.example.spring_boot_project_api.repository.HouseImageRepository;
 import com.example.spring_boot_project_api.repository.HouseRepository;
 import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
@@ -46,6 +50,7 @@ import lombok.RequiredArgsConstructor;
 public class HouseServiceImpl implements HouseService {
 
     private final HouseRepository houseRepository;
+    private final HouseImageRepository houseImageRepository;
     private final RoomRepository roomRepository;
     private final RentalContractRepository rentalContractRepository;
     private final ContractTenantRepository contractTenantRepository;
@@ -77,7 +82,8 @@ public class HouseServiceImpl implements HouseService {
     @Transactional(readOnly = true)
     public HouseResponse getHouseById(Long id) {
         securityUtils.requirePermission(PermissionConstants.HOUSE_VIEW);
-        return houseMapper.toResponse(requireOwnerOrManager(id));
+        House house = requireOwnerOrManager(id);
+        return houseMapper.toResponse(house, primaryImageUrl(house.getId()));
     }
 
     @Override
@@ -88,19 +94,36 @@ public class HouseServiceImpl implements HouseService {
 
         // OWNER always sees all houses within its ownership scope.
         if (securityUtils.hasRole(SecurityUtils.ROLE_OWNER)) {
-            return houseRepository.findAllByOwnerIdOrderByCreatedAtDesc(userId).stream()
-                    .map(houseMapper::toResponse)
-                    .toList();
+            return toResponsesWithPrimaryImages(
+                    houseRepository.findAllByOwnerIdOrderByCreatedAtDesc(userId));
         }
 
         // MANAGER sees only the houses assigned through user_house_access.
         if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
-            return userHouseAccessRepository.findHousesByUserId(userId).stream()
-                    .map(houseMapper::toResponse)
-                    .toList();
+            return toResponsesWithPrimaryImages(userHouseAccessRepository.findHousesByUserId(userId));
         }
 
         return List.of();
+    }
+
+    private List<HouseResponse> toResponsesWithPrimaryImages(List<House> houses) {
+        List<Long> houseIds = houses.stream().map(House::getId).toList();
+        Map<Long, String> primaryByHouseId = houseIds.isEmpty()
+                ? Map.of()
+                : houseImageRepository.findPrimaryByHouseIds(houseIds).stream()
+                        .collect(Collectors.toMap(
+                                image -> image.getHouse().getId(),
+                                HouseImage::getSecureUrl,
+                                (first, ignored) -> first));
+        return houses.stream()
+                .map(house -> houseMapper.toResponse(house, primaryByHouseId.get(house.getId())))
+                .toList();
+    }
+
+    private String primaryImageUrl(Long houseId) {
+        return houseImageRepository.findFirstByHouseIdAndIsPrimaryTrue(houseId)
+                .map(HouseImage::getSecureUrl)
+                .orElse(null);
     }
 
     @Override
@@ -134,6 +157,12 @@ public class HouseServiceImpl implements HouseService {
         if (request.longitude() != null) {
             house.setLongitude(request.longitude());
         }
+        if (request.cityProvince() != null) {
+            house.setCityProvince(request.cityProvince());
+        }
+        if (request.googleMapsUrl() != null) {
+            house.setGoogleMapsUrl(request.googleMapsUrl());
+        }
         if (request.totalRooms() != null) {
             house.setTotalRooms(request.totalRooms());
         }
@@ -145,6 +174,33 @@ public class HouseServiceImpl implements HouseService {
         }
         if (request.status() != null) {
             house.setStatus(request.status());
+        }
+        if (request.propertyType() != null) {
+            house.setPropertyType(request.propertyType());
+        }
+        if (request.furnishing() != null) {
+            house.setFurnishing(request.furnishing());
+        }
+        if (request.availableFrom() != null) {
+            house.setAvailableFrom(request.availableFrom());
+        }
+        if (request.advancePayment() != null) {
+            house.setAdvancePayment(request.advancePayment());
+        }
+        if (request.bedrooms() != null) {
+            house.setBedrooms(request.bedrooms());
+        }
+        if (request.bathrooms() != null) {
+            house.setBathrooms(request.bathrooms());
+        }
+        if (request.areaSqm() != null) {
+            house.setAreaSqm(request.areaSqm());
+        }
+        if (request.landSizeSqm() != null) {
+            house.setLandSizeSqm(request.landSizeSqm());
+        }
+        if (request.numberOfFloors() != null) {
+            house.setNumberOfFloors(request.numberOfFloors());
         }
 
         return houseMapper.toResponse(houseRepository.save(house));

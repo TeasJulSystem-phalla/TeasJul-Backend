@@ -2,6 +2,7 @@ package com.example.spring_boot_project_api.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -13,9 +14,12 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.TestPropertySource;
 
+import com.example.spring_boot_project_api.model.Role;
 import com.example.spring_boot_project_api.model.Tenant;
 import com.example.spring_boot_project_api.model.TenantStatus;
 import com.example.spring_boot_project_api.model.User;
+import com.example.spring_boot_project_api.model.UserRole;
+import com.example.spring_boot_project_api.model.UserRoleId;
 import com.example.spring_boot_project_api.model.UserStatus;
 
 @DataJpaTest
@@ -120,5 +124,81 @@ class UserRepositoryTest {
         for (Page<User> result : java.util.List.of(byName, byFullName, byEmail, byPhone)) {
             assertThat(result.getContent()).extracting(User::getId).doesNotContain(linked.getId());
         }
+    }
+
+    @Test
+    void findAllOwnersReturnsOnlyUsersHoldingOwnerRole() {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+
+        Role ownerRole = findOrCreateOwnerRole(suffix);
+        User owner = persistUser("owner_" + suffix, "owner_" + suffix + "@rental.com");
+        User regular = persistUser("regular_" + suffix, "regular_" + suffix + "@rental.com");
+        owner.setPhone("099_" + suffix);
+        entityManager.persistAndFlush(owner);
+
+        entityManager.persist(UserRole.builder()
+                .id(new UserRoleId(owner.getId(), ownerRole.getId()))
+                .user(owner)
+                .role(ownerRole)
+                .build());
+        entityManager.flush();
+
+        Page<User> bySearch = userRepository.findAllOwners("owner_" + suffix, null, PageRequest.of(0, 10));
+        assertThat(bySearch.getContent()).extracting(User::getId)
+                .contains(owner.getId())
+                .doesNotContain(regular.getId());
+
+        Page<User> byPhone = userRepository.findAllOwners("099_" + suffix, null, PageRequest.of(0, 10));
+        assertThat(byPhone.getContent()).extracting(User::getId).contains(owner.getId());
+
+        Page<User> allOwners = userRepository.findAllOwners(null, null, PageRequest.of(0, 10));
+        assertThat(allOwners.getContent()).extracting(User::getId).contains(owner.getId());
+    }
+
+    @Test
+    void findAllOwnersFiltersByStatus() {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+
+        Role ownerRole = findOrCreateOwnerRole(suffix);
+        User activeOwner = persistUser("act_" + suffix, "act_" + suffix + "@rental.com");
+        User inactiveOwner = persistUser("ina_" + suffix, "ina_" + suffix + "@rental.com");
+        inactiveOwner.setStatus(UserStatus.INACTIVE);
+        entityManager.persistAndFlush(inactiveOwner);
+
+        entityManager.persist(UserRole.builder()
+                .id(new UserRoleId(activeOwner.getId(), ownerRole.getId()))
+                .user(activeOwner)
+                .role(ownerRole)
+                .build());
+        entityManager.persist(UserRole.builder()
+                .id(new UserRoleId(inactiveOwner.getId(), ownerRole.getId()))
+                .user(inactiveOwner)
+                .role(ownerRole)
+                .build());
+        entityManager.flush();
+
+        Page<User> active = userRepository.findAllOwners(null, UserStatus.ACTIVE, PageRequest.of(0, 10));
+        assertThat(active.getContent()).extracting(User::getId)
+                .contains(activeOwner.getId())
+                .doesNotContain(inactiveOwner.getId());
+    }
+
+    /**
+     * Reuses the existing seeded OWNER role row when present (the dev database
+     * seeds role rows outside the migrations), otherwise creates one so the test
+     * never depends on unverifiable seed state.
+     */
+    private Role findOrCreateOwnerRole(String suffix) {
+        List<Role> existing = entityManager.getEntityManager()
+                .createQuery("SELECT r FROM Role r WHERE r.code = 'OWNER'", Role.class)
+                .getResultList();
+        if (!existing.isEmpty()) {
+            return existing.get(0);
+        }
+        return entityManager.persistFlushFind(Role.builder()
+                .name("Owner " + suffix)
+                .code("OWNER")
+                .isSystemRole(true)
+                .build());
     }
 }

@@ -3,7 +3,6 @@ package com.example.spring_boot_project_api.service.impl;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -21,7 +20,6 @@ import com.example.spring_boot_project_api.model.House;
 import com.example.spring_boot_project_api.model.Room;
 import com.example.spring_boot_project_api.model.RoomUtility;
 import com.example.spring_boot_project_api.model.UtilityType;
-import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.repository.HouseRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.RoomUtilityRepository;
@@ -53,7 +51,7 @@ public class RoomUtilityServiceImpl implements RoomUtilityService {
         securityUtils.requirePermission(PermissionConstants.UTILITY_VIEW);
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> RoomNotFoundException.forId(roomId));
-        Long ownerId = resolveOwnerId(room);
+        resolveOwnerId(room);
 
         List<RoomUtility> utilities = roomUtilityRepository.findByRoomIdAndStatus(
                 roomId, UtilityTypeStatus.ACTIVE);
@@ -69,7 +67,7 @@ public class RoomUtilityServiceImpl implements RoomUtilityService {
 
     @Override
     @Transactional
-    public RoomUtilityResponse assignUtility(Long roomId, Long utilityTypeId) {
+    public RoomUtilityResponse assignUtility(Long roomId, Long utilityTypeId, Boolean isIncluded) {
         securityUtils.requirePermission(PermissionConstants.UTILITY_MANAGE);
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> RoomNotFoundException.forId(roomId));
@@ -88,6 +86,9 @@ public class RoomUtilityServiceImpl implements RoomUtilityService {
                         "Utility type " + type.getName() + " is already assigned to this room");
             }
             ru.setStatus(UtilityTypeStatus.ACTIVE);
+            if (isIncluded != null) {
+                ru.setIsIncluded(isIncluded);
+            }
             RoomUtility saved = roomUtilityRepository.save(ru);
             return mapper.toResponse(saved, type, room.getRoomNumber());
         }
@@ -97,6 +98,7 @@ public class RoomUtilityServiceImpl implements RoomUtilityService {
                 .roomId(roomId)
                 .utilityTypeId(utilityTypeId)
                 .status(UtilityTypeStatus.ACTIVE)
+                .isIncluded(Boolean.TRUE.equals(isIncluded))
                 .build();
 
         RoomUtility saved = roomUtilityRepository.save(ru);
@@ -109,7 +111,7 @@ public class RoomUtilityServiceImpl implements RoomUtilityService {
         securityUtils.requirePermission(PermissionConstants.UTILITY_MANAGE);
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> RoomNotFoundException.forId(roomId));
-        Long ownerId = resolveOwnerId(room);
+        resolveOwnerId(room);
 
         List<RoomUtility> list = roomUtilityRepository.findByRoomIdAndStatus(
                 roomId, UtilityTypeStatus.ACTIVE);
@@ -130,6 +132,10 @@ public class RoomUtilityServiceImpl implements RoomUtilityService {
                 .orElseThrow(() -> HouseNotFoundException.forId(room.getHouseId()));
 
         Long ownerId = house.getOwner().getId();
+
+        if (securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)) {
+            return ownerId;
+        }
 
         if (ownerId.equals(currentUserId)) {
             return currentUserId;

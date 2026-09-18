@@ -21,14 +21,15 @@ import lombok.RequiredArgsConstructor;
  * derived from this user, never from the client request.
  *
  * <p>Permission checks ({@link #hasPermission}/{@link #requirePermission}) always
- * grant the OWNER role full access so the Owner can never be locked out through
- * permission management; every other role must hold the permission on one of its
- * assigned roles.</p>
+ * grant the SUPER_ADMIN and OWNER roles full access so they can never be locked
+ * out through permission management; every other role must hold the permission
+ * on one of its assigned roles.</p>
  */
 @Component
 @RequiredArgsConstructor
 public class SecurityUtils {
 
+    public static final String ROLE_SUPER_ADMIN = "SUPER_ADMIN";
     public static final String ROLE_OWNER = "OWNER";
     public static final String ROLE_MANAGER = "MANAGER";
     public static final String ROLE_TENANT = "TENANT";
@@ -65,9 +66,9 @@ public class SecurityUtils {
         return hasPermission(getCurrentUserId(), permissionCode);
     }
 
-    /** Whether the given user holds the given permission (OWNER always granted). */
+    /** Whether the given user holds the given permission (SUPER_ADMIN and OWNER always granted). */
     public boolean hasPermission(Long userId, String permissionCode) {
-        if (hasRole(userId, ROLE_OWNER)) {
+        if (hasRole(userId, ROLE_SUPER_ADMIN) || hasRole(userId, ROLE_OWNER)) {
             return true;
         }
         List<Long> roleIds = userRoleRepository.findRoleIdsByUserId(userId);

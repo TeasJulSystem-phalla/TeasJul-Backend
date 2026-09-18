@@ -1,7 +1,9 @@
 package com.example.spring_boot_project_api.service.impl;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -13,6 +15,8 @@ import com.example.spring_boot_project_api.exception.DuplicateResourceException;
 import com.example.spring_boot_project_api.exception.RoomTypeNotFoundException;
 import com.example.spring_boot_project_api.mapper.RoomTypeMapper;
 import com.example.spring_boot_project_api.model.RoomType;
+import com.example.spring_boot_project_api.model.RoomTypeImage;
+import com.example.spring_boot_project_api.repository.RoomTypeImageRepository;
 import com.example.spring_boot_project_api.repository.RoomTypeRepository;
 import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.service.RoomTypeService;
@@ -25,6 +29,7 @@ import lombok.RequiredArgsConstructor;
 public class RoomTypeServiceImpl implements RoomTypeService {
 
     private final RoomTypeRepository roomTypeRepository;
+    private final RoomTypeImageRepository roomTypeImageRepository;
     private final UserHouseAccessRepository userHouseAccessRepository;
     private final RoomTypeMapper roomTypeMapper;
     private final SecurityUtils securityUtils;
@@ -50,8 +55,10 @@ public class RoomTypeServiceImpl implements RoomTypeService {
     @Override
     @Transactional(readOnly = true)
     public List<RoomTypeResponse> getAllRoomTypes() {
-        return resolveScopedRoomTypes().stream()
-                .map(roomTypeMapper::toDto)
+        List<RoomType> roomTypes = resolveScopedRoomTypes();
+        Map<Long, String> primaryImages = resolvePrimaryImages(roomTypes);
+        return roomTypes.stream()
+                .map(roomType -> roomTypeMapper.toDto(roomType, primaryImages.get(roomType.getId())))
                 .toList();
     }
 
@@ -91,6 +98,24 @@ public class RoomTypeServiceImpl implements RoomTypeService {
         roomTypeRepository.delete(existing);
     }
 
+    @Override
+    public RoomType requireAccessibleRoomType(Long id) {
+        return getOwnedRoomType(id);
+    }
+
+    private Map<Long, String> resolvePrimaryImages(List<RoomType> roomTypes) {
+        if (roomTypes.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, String> result = new LinkedHashMap<>();
+        List<RoomTypeImage> primaryImages = roomTypeImageRepository
+                .findPrimaryByRoomTypeIds(roomTypes.stream().map(RoomType::getId).toList());
+        for (RoomTypeImage image : primaryImages) {
+            result.putIfAbsent(image.getRoomType().getId(), image.getSecureUrl());
+        }
+        return result;
+    }
+
     private List<RoomType> resolveScopedRoomTypes() {
         if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
             List<Long> ownerIds = userHouseAccessRepository.findOwnerIdsByUserId(securityUtils.getCurrentUserId());
@@ -106,6 +131,9 @@ public class RoomTypeServiceImpl implements RoomTypeService {
         Long currentUserId = securityUtils.getCurrentUserId();
         return roomTypeRepository.findById(id)
                 .map(roomType -> {
+                    if (securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)) {
+                        return roomType;
+                    }
                     if (!roomType.getOwnerId().equals(currentUserId)
                             && !resolveScopedOwnerIds().contains(roomType.getOwnerId())) {
                         throw new AccessDeniedException(
@@ -117,6 +145,12 @@ public class RoomTypeServiceImpl implements RoomTypeService {
     }
 
     private List<Long> resolveScopedOwnerIds() {
+        if (securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)) {
+            return roomTypeRepository.findAll().stream()
+                    .map(RoomType::getOwnerId)
+                    .distinct()
+                    .toList();
+        }
         if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
             List<Long> ownerIds = userHouseAccessRepository.findOwnerIdsByUserId(securityUtils.getCurrentUserId());
             if (ownerIds.isEmpty()) {

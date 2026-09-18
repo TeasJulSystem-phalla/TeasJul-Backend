@@ -116,6 +116,12 @@ public class AmenityServiceImpl implements AmenityService {
     }
 
     private List<Long> resolveScopedOwnerIds() {
+        if (securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)) {
+            return amenityRepository.findAll().stream()
+                    .map(Amenity::getOwnerId)
+                    .distinct()
+                    .toList();
+        }
         if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
             List<Long> ownerIds = userHouseAccessRepository.findOwnerIdsByUserId(securityUtils.getCurrentUserId());
             if (ownerIds.isEmpty()) {

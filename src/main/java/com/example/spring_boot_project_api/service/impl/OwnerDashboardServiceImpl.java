@@ -8,7 +8,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -90,7 +89,7 @@ public class OwnerDashboardServiceImpl implements OwnerDashboardService {
 
         BigDecimal overdueAmount = scopeInvoices.stream()
                 .filter(inv -> inv.getStatus() == InvoiceStatus.OVERDUE)
-                .map(inv -> inv.getTotalAmount()
+                .map(inv -> (inv.getTotalAmount() != null ? inv.getTotalAmount() : BigDecimal.ZERO)
                         .subtract(inv.getDiscount() != null ? inv.getDiscount() : BigDecimal.ZERO))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
@@ -112,7 +111,9 @@ public class OwnerDashboardServiceImpl implements OwnerDashboardService {
             invoiceStatusCounts.put(status, 0L);
         }
         for (Invoice inv : scopeInvoices) {
-            invoiceStatusCounts.merge(inv.getStatus(), 1L, Long::sum);
+                        if (inv.getStatus() != null) {
+                                invoiceStatusCounts.merge(inv.getStatus(), 1L, Long::sum);
+                        }
         }
         List<ManagerDashboardResponse.StatusCount> paymentStatusBreakdown =
                 invoiceStatusCounts.entrySet().stream()
@@ -349,7 +350,7 @@ public class OwnerDashboardServiceImpl implements OwnerDashboardService {
                     BigDecimal revenue = sumRevenue(hInvoices, fromDate, toDate);
                     BigDecimal overdue = hInvoices.stream()
                             .filter(inv -> inv.getStatus() == InvoiceStatus.OVERDUE)
-                            .map(inv -> inv.getTotalAmount()
+                            .map(inv -> (inv.getTotalAmount() != null ? inv.getTotalAmount() : BigDecimal.ZERO)
                                     .subtract(inv.getDiscount() != null
                                             ? inv.getDiscount() : BigDecimal.ZERO))
                             .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -377,17 +378,23 @@ public class OwnerDashboardServiceImpl implements OwnerDashboardService {
 
         List<Room> rooms = roomRepository.findByHouseIdIn(scopeHouseIds);
         Map<Long, Long> roomToHouseId = rooms.stream()
+                .filter(room -> room.getId() != null && room.getHouseId() != null)
                 .collect(Collectors.toMap(Room::getId, Room::getHouseId, (a, b) -> a));
         Map<Long, String> roomNumbers = rooms.stream()
-                .collect(Collectors.toMap(Room::getId, Room::getRoomNumber, (a, b) -> a));
+                .filter(room -> room.getId() != null)
+                .collect(Collectors.toMap(Room::getId,
+                        room -> room.getRoomNumber() != null ? room.getRoomNumber() : "UNKNOWN",
+                        (a, b) -> a));
 
         Map<Long, Long> contractToRoomId = contractRepository.findByRoomHouseIdIn(scopeHouseIds)
                 .stream()
+                .filter(contract -> contract.getId() != null && contract.getRoomId() != null)
                 .collect(Collectors.toMap(
                         RentalContract::getId, RentalContract::getRoomId, (a, b) -> a));
 
         List<Invoice> invoices = invoiceRepository.findByContractIdIn(contractIds);
         Map<Long, Invoice> invoiceMap = invoices.stream()
+                .filter(invoice -> invoice.getId() != null)
                 .collect(Collectors.toMap(Invoice::getId, i -> i, (a, b) -> a));
 
         List<Long> invoiceIds = new ArrayList<>(invoiceMap.keySet());
@@ -396,7 +403,10 @@ public class OwnerDashboardServiceImpl implements OwnerDashboardService {
         }
 
         Map<Long, String> houseNames = houseRepository.findAllById(scopeHouseIds).stream()
-                .collect(Collectors.toMap(House::getId, House::getName, (a, b) -> a));
+                .filter(house -> house.getId() != null)
+                .collect(Collectors.toMap(House::getId,
+                        house -> house.getName() != null ? house.getName() : "UNKNOWN",
+                        (a, b) -> a));
 
         return paymentRepository.findByInvoiceIdIn(invoiceIds).stream()
                 .filter(p -> p.getStatus() == PaymentStatus.PAID)
@@ -412,8 +422,8 @@ public class OwnerDashboardServiceImpl implements OwnerDashboardService {
                     return new OwnerDashboardResponse.RecentPayment(
                             p.getId(),
                             p.getPaymentNo(),
-                            p.getAmount(),
-                            p.getStatus().name(),
+                            p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO,
+                            p.getStatus() != null ? p.getStatus().name() : "UNKNOWN",
                             p.getPaidAt(),
                             null,
                             hId != null ? houseNames.getOrDefault(hId, "House #" + hId) : null,

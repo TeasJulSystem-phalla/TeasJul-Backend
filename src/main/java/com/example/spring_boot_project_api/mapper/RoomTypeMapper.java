@@ -27,6 +27,10 @@ public class RoomTypeMapper {
     }
 
     public RoomTypeResponse toDto(RoomType entity) {
+        return toDto(entity, null);
+    }
+
+    public RoomTypeResponse toDto(RoomType entity, String primaryImage) {
         if (entity == null) return null;
 
         RoomTypeResponse response = new RoomTypeResponse();
@@ -39,6 +43,7 @@ public class RoomTypeMapper {
         response.setDefaultRent(entity.getDefaultRent());
         response.setDefaultDeposit(entity.getDefaultDeposit());
         response.setStatus(entity.getStatus());
+        response.setPrimaryImage(primaryImage);
         response.setCreatedAt(entity.getCreatedAt());
         response.setUpdatedAt(entity.getUpdatedAt());
         return response;

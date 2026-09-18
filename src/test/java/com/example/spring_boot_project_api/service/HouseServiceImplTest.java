@@ -54,6 +54,7 @@ import com.example.spring_boot_project_api.model.TenantStatus;
 import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.model.UserStatus;
 import com.example.spring_boot_project_api.repository.ContractTenantRepository;
+import com.example.spring_boot_project_api.repository.HouseImageRepository;
 import com.example.spring_boot_project_api.repository.HouseRepository;
 import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
@@ -67,6 +68,8 @@ class HouseServiceImplTest {
 
     @Mock
     private HouseRepository houseRepository;
+    @Mock
+    private HouseImageRepository houseImageRepository;
     @Mock
     private RoomRepository roomRepository;
     @Mock

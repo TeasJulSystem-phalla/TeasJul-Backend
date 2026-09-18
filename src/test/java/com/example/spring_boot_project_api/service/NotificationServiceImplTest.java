@@ -47,6 +47,7 @@ import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.TenantRepository;
 import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
+import com.example.spring_boot_project_api.repository.UserRoleRepository;
 import com.example.spring_boot_project_api.service.impl.NotificationServiceImpl;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
@@ -57,6 +58,7 @@ class NotificationServiceImplTest {
     @Mock private NotificationMapper notificationMapper;
     @Mock private SecurityUtils securityUtils;
     @Mock private UserRepository userRepository;
+        @Mock private UserRoleRepository userRoleRepository;
     @Mock private TenantRepository tenantRepository;
     @Mock private ContractTenantRepository contractTenantRepository;
     @Mock private RentalContractRepository rentalContractRepository;
@@ -251,4 +253,43 @@ class NotificationServiceImplTest {
 
         verify(notificationRepository, never()).save(any());
     }
+
+        @Test
+        void notifyPropertySubmittedTargetsOnlySuperAdminsAndIncludesReference() {
+                User superAdmin = User.builder().id(9L).build();
+                Room room = new Room();
+                room.setId(77L);
+                room.setName("Modern Room");
+                when(userRoleRepository.findUsersByRoleCode(SecurityUtils.ROLE_SUPER_ADMIN))
+                                .thenReturn(List.of(superAdmin));
+                when(userRepository.findById(9L)).thenReturn(Optional.of(superAdmin));
+                when(notificationRepository.existsByUserIdAndTypeAndReferenceTypeAndReferenceId(
+                        9L, NotificationType.PROPERTY_SUBMITTED, "ROOM", 77L)).thenReturn(false);
+
+                notificationService.notifyPropertySubmitted(room);
+
+                ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+                verify(notificationRepository).saveAndFlush(captor.capture());
+                assertThat(captor.getValue().getUser().getId()).isEqualTo(9L);
+                assertThat(captor.getValue().getType()).isEqualTo(NotificationType.PROPERTY_SUBMITTED);
+                assertThat(captor.getValue().getReferenceType()).isEqualTo("ROOM");
+                assertThat(captor.getValue().getReferenceId()).isEqualTo(77L);
+                assertThat(captor.getValue().getData()).contains("referenceType", "ROOM", "referenceId", "77");
+        }
+
+        @Test
+        void notifyPropertySubmittedDoesNotDuplicateExistingReference() {
+                User superAdmin = User.builder().id(9L).build();
+                Room room = new Room();
+                room.setId(77L);
+                when(userRoleRepository.findUsersByRoleCode(SecurityUtils.ROLE_SUPER_ADMIN))
+                                .thenReturn(List.of(superAdmin));
+                when(userRepository.findById(9L)).thenReturn(Optional.of(superAdmin));
+                when(notificationRepository.existsByUserIdAndTypeAndReferenceTypeAndReferenceId(
+                        9L, NotificationType.PROPERTY_SUBMITTED, "ROOM", 77L)).thenReturn(true);
+
+                notificationService.notifyPropertySubmitted(room);
+
+                verify(notificationRepository, never()).saveAndFlush(any(Notification.class));
+        }
 }

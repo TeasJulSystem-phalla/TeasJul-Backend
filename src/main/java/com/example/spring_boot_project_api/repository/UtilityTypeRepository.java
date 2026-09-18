@@ -18,6 +18,9 @@ public interface UtilityTypeRepository
 
     List<UtilityType> findByOwnerIdIn(Collection<Long> ownerIds);
 
+    List<UtilityType> findByIdInAndStatus(Collection<Long> ids,
+            com.example.spring_boot_project_api.enums.UtilityTypeStatus status);
+
     boolean existsByOwnerIdAndName(Long ownerId, String name);
 
     boolean existsByOwnerIdAndCode(Long ownerId, String code);

@@ -670,6 +670,11 @@ public class InvoiceServiceImpl implements InvoiceService {
         LocalDate periodEnd = ym.atEndOfMonth();
 
         for (RoomUtility ru : ctx.roomUtilities()) {
+            // Included utilities are part of the rent. They must not require a
+            // utility type, meter, reading, or rate, and must not create a $0 line.
+            if (Boolean.TRUE.equals(ru.getIsIncluded())) {
+                continue;
+            }
             UtilityType type = typeRepository.findByIdAndOwnerId(
                     ru.getUtilityTypeId(), ctx.owner().getId())
                     .orElseThrow(() -> new InvalidInvoiceOperationException(

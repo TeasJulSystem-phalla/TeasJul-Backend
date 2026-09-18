@@ -15,14 +15,13 @@ import com.example.spring_boot_project_api.exception.RoomAmenityNotFoundExceptio
 import com.example.spring_boot_project_api.exception.UserNotFoundException;
 import com.example.spring_boot_project_api.mapper.RoomAmenityMapper;
 import com.example.spring_boot_project_api.model.Amenity;
-import com.example.spring_boot_project_api.model.Room;
 import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.repository.AmenityRepository;
 import com.example.spring_boot_project_api.repository.RoomAmenityRepository;
-import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.service.RoomAmenityService;
+import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
 
@@ -32,10 +31,10 @@ public class RoomAmenityServiceImpl implements RoomAmenityService {
 
     private final RoomAmenityRepository roomAmenityRepository;
     private final AmenityRepository amenityRepository;
-    private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final RoomAmenityMapper roomAmenityMapper;
     private final HouseAccessService houseAccessService;
+    private final SecurityUtils securityUtils;
 
     @Override
     @Transactional
@@ -46,7 +45,8 @@ public class RoomAmenityServiceImpl implements RoomAmenityService {
         Amenity amenity = amenityRepository.findById(amenityId)
                 .orElseThrow(() -> AmenityNotFoundException.forId(amenityId));
 
-        if (!amenity.getOwnerId().equals(currentUserId)
+        if (!securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)
+            && !amenity.getOwnerId().equals(currentUserId)
                 && !houseAccessService.getScopedOwnerIds().contains(amenity.getOwnerId())) {
             throw new AccessDeniedException(
                     "You do not have permission to access this resource");

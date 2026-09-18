@@ -57,7 +57,11 @@ public class UtilityRateServiceImpl implements UtilityRateService {
         securityUtils.requirePermission(PermissionConstants.UTILITY_CREATE);
         User owner = getCurrentOwner();
 
-        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+        if (securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)) {
+            House house = houseRepository.findById(request.houseId())
+                .orElseThrow(() -> HouseNotFoundException.forId(request.houseId()));
+            owner = house.getOwner();
+        } else if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
             List<Long> approvedHouseIds = userHouseAccessRepository.findHouseIdsByUserId(securityUtils.getCurrentUserId());
             if (!approvedHouseIds.contains(request.houseId())) {
                 throw HouseNotFoundException.forId(request.houseId());
@@ -90,7 +94,10 @@ public class UtilityRateServiceImpl implements UtilityRateService {
         List<Long> scopedOwnerIds;
         final List<Long> scopedHouseIds;
 
-        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+        if (securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)) {
+            scopedOwnerIds = null;
+            scopedHouseIds = houseId == null ? null : List.of(houseId);
+        } else if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
             scopedOwnerIds = new ArrayList<>(userHouseAccessRepository.findOwnerIdsByUserId(securityUtils.getCurrentUserId()));
             if (!scopedOwnerIds.contains(currentOwnerId)) {
                 scopedOwnerIds.add(currentOwnerId);
@@ -103,7 +110,9 @@ public class UtilityRateServiceImpl implements UtilityRateService {
 
         Specification<UtilityRate> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
-            predicates.add(root.get("owner").get("id").in(scopedOwnerIds));
+            if (scopedOwnerIds != null) {
+                predicates.add(root.get("owner").get("id").in(scopedOwnerIds));
+            }
             if (scopedHouseIds != null) {
                 predicates.add(root.get("houseId").in(scopedHouseIds));
             } else if (houseId != null) {
@@ -241,6 +250,9 @@ public class UtilityRateServiceImpl implements UtilityRateService {
                 .orElseThrow(() -> UtilityRateNotFoundException.forId(id));
 
         Long rateOwnerId = rate.getOwner().getId();
+        if (securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)) {
+            return rate;
+        }
         if (rateOwnerId.equals(getCurrentOwner().getId())) {
             return rate;
         }

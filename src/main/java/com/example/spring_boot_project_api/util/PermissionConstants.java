@@ -111,4 +111,14 @@ public final class PermissionConstants {
     // ---- HOUSE ACCESS ----
     public static final String HOUSE_ACCESS_VIEW = "HOUSE_ACCESS_VIEW";
     public static final String HOUSE_ACCESS_MANAGE = "HOUSE_ACCESS_MANAGE";
+
+    // ---- LISTING ----
+    public static final String LISTING_VIEW = "LISTING_VIEW";
+    public static final String LISTING_MANAGE = "LISTING_MANAGE";
+    public static final String LISTING_APPROVE = "LISTING_APPROVE";
+
+    // ---- FEEDBACK ----
+    public static final String FEEDBACK_CREATE = "FEEDBACK_CREATE";
+    public static final String FEEDBACK_VIEW = "FEEDBACK_VIEW";
+    public static final String FEEDBACK_MANAGE = "FEEDBACK_MANAGE";
 }

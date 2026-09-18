@@ -19,6 +19,7 @@ public class RoomTypeResponse {
     private BigDecimal defaultRent;
     private BigDecimal defaultDeposit;
     private RoomTypeStatus status;
+    private String primaryImage;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt; 
 

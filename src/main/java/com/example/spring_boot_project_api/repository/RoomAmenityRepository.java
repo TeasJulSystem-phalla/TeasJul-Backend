@@ -5,6 +5,9 @@ import java.util.Optional;
 
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import com.example.spring_boot_project_api.model.RoomAmenity;
@@ -22,4 +25,9 @@ public interface RoomAmenityRepository extends JpaRepository<RoomAmenity, RoomAm
     Optional<RoomAmenity> findByIdRoomIdAndIdAmenityId(Long roomId, Long amenityId);
 
     void deleteByIdRoomIdAndIdAmenityId(Long roomId, Long amenityId);
+
+    /** Bulk deletes every amenity assignment of the given room immediately (used before re-inserting). */
+    @Modifying
+    @Query("delete from RoomAmenity ra where ra.id.roomId = :roomId")
+    void deleteByIdRoomId(@Param("roomId") Long roomId);
 }

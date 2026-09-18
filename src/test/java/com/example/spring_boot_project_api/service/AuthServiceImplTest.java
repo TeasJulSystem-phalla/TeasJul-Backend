@@ -17,6 +17,7 @@ import org.mockito.Spy;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import com.example.spring_boot_project_api.dto.request.LoginRequest;
@@ -196,5 +197,20 @@ class AuthServiceImplTest {
 
         assertThatThrownBy(() -> authService.login(request, httpServletRequest))
                 .isInstanceOf(BadCredentialsException.class);
+    }
+
+    @Test
+    void loginShouldFailWhenAccountIsInactive() {
+        LoginRequest request = new LoginRequest("johndoe", RAW_PASSWORD);
+        User user = savedUser();
+        user.setStatus(UserStatus.INACTIVE);
+        when(userRepository.findByUsername("johndoe")).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches(RAW_PASSWORD, HASHED_PASSWORD)).thenReturn(true);
+
+        assertThatThrownBy(() -> authService.login(request, httpServletRequest))
+                .isInstanceOf(LockedException.class)
+                .hasMessageContaining("Account is locked or inactive");
+        // last login is never recorded for a deactivated account
+        verify(userService, org.mockito.Mockito.never()).createUser(any(User.class));
     }
 }

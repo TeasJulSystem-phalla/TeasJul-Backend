@@ -5,6 +5,7 @@ package com.example.spring_boot_project_api.enums;
  * event types can be added without schema changes.
  */
 public enum NotificationType {
+    PROPERTY_SUBMITTED,
     INVOICE_CREATED,
     PAYMENT_CREATED,
     PAYMENT_SUCCESS,

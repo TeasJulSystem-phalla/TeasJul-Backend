@@ -1,10 +1,13 @@
 package com.example.spring_boot_project_api.dto.request;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
+import com.example.spring_boot_project_api.enums.Furnishing;
+import com.example.spring_boot_project_api.enums.ListingScope;
+import com.example.spring_boot_project_api.enums.PropertyType;
 import com.example.spring_boot_project_api.enums.RoomStatus;
 
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -16,10 +19,8 @@ public class RoomRepuest {
     @NotNull(message = "House ID is required")
     private Long houseId;
 
-    @NotNull(message = "Room Type ID is required")
     private Long roomTypeId;
 
-    @NotBlank(message = "Room number is required")
     @Size(max = 50, message = "Room number must not exceed 50 characters")
     private String roomNumber;
 
@@ -36,11 +37,36 @@ public class RoomRepuest {
     @PositiveOrZero(message = "Security deposit cannot be negative")
     private BigDecimal securityDeposit = BigDecimal.ZERO;
 
-    @NotNull(message = "Capacity is required")
     @Positive(message = "Capacity must be greater than 0")
     private Integer capacity = 1;
 
     private RoomStatus status = RoomStatus.AVAILABLE;
 
     private String description;
+
+    private PropertyType propertyType;
+
+    private ListingScope listingScope;
+
+    private Furnishing furnishing;
+
+    private LocalDate availableFrom;
+
+    @PositiveOrZero(message = "Advance payment cannot be negative")
+    private BigDecimal advancePayment;
+
+    @Positive(message = "Bedrooms must be greater than 0")
+    private Integer bedrooms;
+
+    @Positive(message = "Bathrooms must be greater than 0")
+    private Integer bathrooms;
+
+    @Positive(message = "Area must be greater than 0")
+    private BigDecimal areaSqm;
+
+    @Positive(message = "Land size must be greater than 0")
+    private BigDecimal landSizeSqm;
+
+    @Positive(message = "Number of floors must be greater than 0")
+    private Integer numberOfFloors;
 }

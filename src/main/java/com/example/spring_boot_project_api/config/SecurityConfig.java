@@ -66,6 +66,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/payments/callback").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/tenant-invitations/validate").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/tenant-invitations/consume").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/public/rooms/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/public/room-types").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/public/listings/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/public/feedback").permitAll()
                         .requestMatchers(
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",

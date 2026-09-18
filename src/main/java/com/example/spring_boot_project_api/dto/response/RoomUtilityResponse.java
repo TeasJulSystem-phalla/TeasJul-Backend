@@ -14,6 +14,7 @@ public record RoomUtilityResponse(
         String utilityTypeCode,
         UtilityBillingMethod billingMethod,
         UtilityTypeStatus status,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        Boolean isIncluded
 ) {
 }

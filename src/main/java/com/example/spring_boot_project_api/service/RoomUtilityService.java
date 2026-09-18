@@ -8,7 +8,7 @@ public interface RoomUtilityService {
 
     List<RoomUtilityResponse> getRoomUtilities(Long roomId);
 
-    RoomUtilityResponse assignUtility(Long roomId, Long utilityTypeId);
+    RoomUtilityResponse assignUtility(Long roomId, Long utilityTypeId, Boolean isIncluded);
 
     void removeUtility(Long roomId, Long utilityTypeId);
 }

@@ -59,6 +59,10 @@ public class RoomUtility {
     @Column(name = "status", nullable = false, length = 20)
     private UtilityTypeStatus status = UtilityTypeStatus.ACTIVE;
 
+    @Builder.Default
+    @Column(name = "is_included", nullable = false)
+    private Boolean isIncluded = false;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

@@ -51,12 +51,16 @@ public class HouseAccessServiceImpl implements HouseAccessService {
             return false;
         }
 
-        if (house.getOwner().getId().equals(currentUserId)) {
+        if (house.getOwner() != null && house.getOwner().getId().equals(currentUserId)) {
             return true;
         }
 
         if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)
                 && userHouseAccessRepository.existsByUserIdAndHouseId(currentUserId, houseId)) {
+            return true;
+        }
+
+        if (securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)) {
             return true;
         }
 
@@ -83,7 +87,7 @@ public class HouseAccessServiceImpl implements HouseAccessService {
         Long currentUserId = securityUtils.getCurrentUserId();
         House house = houseRepository.findById(houseId)
                 .orElseThrow(() -> HouseNotFoundException.forId(houseId));
-        if (!house.getOwner().getId().equals(currentUserId)) {
+        if (house.getOwner() == null || !house.getOwner().getId().equals(currentUserId)) {
             throw new AccessDeniedException("You do not have permission to access this resource");
         }
     }

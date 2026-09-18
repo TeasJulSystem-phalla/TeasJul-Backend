@@ -65,6 +65,7 @@ class SecurityUtilsTest {
 
     @Test
     void hasPermissionAlwaysGrantsOwnerWithoutQueryingRolePermissions() {
+        when(userRoleRepository.existsByUserIdAndRoleCode(10L, SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(false);
         when(userRoleRepository.existsByUserIdAndRoleCode(10L, SecurityUtils.ROLE_OWNER)).thenReturn(true);
 
         boolean result = securityUtils.hasPermission(10L, PermissionConstants.HOUSE_MANAGE);
@@ -75,7 +76,19 @@ class SecurityUtilsTest {
     }
 
     @Test
+    void hasPermissionAlwaysGrantsSuperAdminWithoutQueryingRolePermissions() {
+        when(userRoleRepository.existsByUserIdAndRoleCode(10L, SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(true);
+
+        boolean result = securityUtils.hasPermission(10L, PermissionConstants.HOUSE_MANAGE);
+
+        assertThat(result).isTrue();
+        verify(rolePermissionRepository, never())
+                .existsByRoleIdInAndPermission_Code(anyCollection(), anyString());
+    }
+
+    @Test
     void hasPermissionReturnsFalseWhenUserHasNoRoles() {
+        denySuperAdminRole();
         when(userRoleRepository.existsByUserIdAndRoleCode(10L, SecurityUtils.ROLE_OWNER)).thenReturn(false);
         when(userRoleRepository.findRoleIdsByUserId(10L)).thenReturn(List.of());
 
@@ -88,6 +101,7 @@ class SecurityUtilsTest {
 
     @Test
     void hasPermissionChecksRolePermissionsForNonOwner() {
+        denySuperAdminRole();
         when(userRoleRepository.existsByUserIdAndRoleCode(10L, SecurityUtils.ROLE_OWNER)).thenReturn(false);
         when(userRoleRepository.findRoleIdsByUserId(10L)).thenReturn(List.of(2L, 3L));
         when(rolePermissionRepository.existsByRoleIdInAndPermission_Code(List.of(2L, 3L), "PAYMENT_VIEW"))
@@ -100,6 +114,7 @@ class SecurityUtilsTest {
 
     @Test
     void hasPermissionReturnsFalseWhenRoleHasNotBeenGrantedThePermission() {
+        denySuperAdminRole();
         when(userRoleRepository.existsByUserIdAndRoleCode(10L, SecurityUtils.ROLE_OWNER)).thenReturn(false);
         when(userRoleRepository.findRoleIdsByUserId(10L)).thenReturn(List.of(2L));
         when(rolePermissionRepository.existsByRoleIdInAndPermission_Code(List.of(2L), "EXPENSE_MANAGE"))
@@ -113,6 +128,7 @@ class SecurityUtilsTest {
     @Test
     void requirePermissionDoesNotThrowWhenCurrentUserHasPermission() {
         authenticateAs(user);
+        denySuperAdminRole();
         when(userRoleRepository.existsByUserIdAndRoleCode(10L, SecurityUtils.ROLE_OWNER)).thenReturn(false);
         when(userRoleRepository.findRoleIdsByUserId(10L)).thenReturn(List.of(3L));
         when(rolePermissionRepository.existsByRoleIdInAndPermission_Code(List.of(3L), "MAINTENANCE_VIEW"))
@@ -124,6 +140,7 @@ class SecurityUtilsTest {
     @Test
     void requirePermissionThrowsForMissingPermission() {
         authenticateAs(user);
+        denySuperAdminRole();
         when(userRoleRepository.existsByUserIdAndRoleCode(10L, SecurityUtils.ROLE_OWNER)).thenReturn(false);
         when(userRoleRepository.findRoleIdsByUserId(10L)).thenReturn(List.of(3L));
         when(rolePermissionRepository.existsByRoleIdInAndPermission_Code(anyCollection(), anyString()))
@@ -136,11 +153,16 @@ class SecurityUtilsTest {
     @Test
     void requirePermissionThrowsForCurrentUserWithoutRoles() {
         authenticateAs(user);
+        denySuperAdminRole();
         when(userRoleRepository.existsByUserIdAndRoleCode(10L, SecurityUtils.ROLE_OWNER)).thenReturn(false);
         when(userRoleRepository.findRoleIdsByUserId(10L)).thenReturn(List.of());
 
         assertThatThrownBy(() -> securityUtils.requirePermission("SETTING_UPDATE"))
                 .isInstanceOf(AccessDeniedException.class);
+    }
+
+    private void denySuperAdminRole() {
+        when(userRoleRepository.existsByUserIdAndRoleCode(10L, SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(false);
     }
 
     private void authenticateAs(User currentUser) {

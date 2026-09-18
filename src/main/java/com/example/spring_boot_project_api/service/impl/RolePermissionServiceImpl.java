@@ -124,7 +124,8 @@ public class RolePermissionServiceImpl implements RolePermissionService {
     }
 
     private void requireOwner() {
-        if (!securityUtils.hasRole(SecurityUtils.ROLE_OWNER)) {
+        if (!securityUtils.hasRole(SecurityUtils.ROLE_OWNER)
+                && !securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)) {
             throw new AccessDeniedException("You do not have permission to access this resource");
         }
     }

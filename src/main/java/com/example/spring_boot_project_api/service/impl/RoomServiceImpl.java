@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,7 @@ import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.service.RoomService;
 import com.example.spring_boot_project_api.util.PermissionConstants;
+import com.example.spring_boot_project_api.util.PropertyTypeRules;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -49,6 +51,9 @@ public class RoomServiceImpl implements RoomService {
         Long currentUserId = securityUtils.getCurrentUserId();
         Long ownerId = resolveHouseOwnerId(request.getHouseId(), currentUserId);
 
+        if (request.getRoomNumber() == null || request.getRoomNumber().isBlank()) {
+            throw new IllegalArgumentException("Room number is required");
+        }
         if (roomRepository.existsByHouseIdAndRoomNumber(request.getHouseId(), request.getRoomNumber())) {
             throw new DuplicateResourceException(
                     "Room number already exists in this house: " + request.getRoomNumber());
@@ -118,14 +123,30 @@ public class RoomServiceImpl implements RoomService {
         }
         verifyHouseAccess(existing.getHouseId(), currentUserId);
 
-        if (!existing.getRoomNumber().equals(request.getRoomNumber())
-                && roomRepository.existsByHouseIdAndRoomNumber(existing.getHouseId(), request.getRoomNumber())) {
+        // Enforce per-property-type validation for the SUPER_ADMIN direct
+        // posting workflow (including subsequent draft edits). OWNER/MANAGER
+        // workflows keep their existing behaviour.
+        if (securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)
+                && request.getPropertyType() != null) {
+            PropertyTypeRules.validate(
+                    request.getPropertyType(),
+                    request.getRoomTypeId(),
+                    request.getRoomNumber(),
+                    request.getFloorNumber(),
+                    request.getCapacity());
+        }
+
+        String roomNumber = request.getRoomNumber();
+        if (roomNumber != null && !Objects.equals(existing.getRoomNumber(), roomNumber)
+                && roomRepository.existsByHouseIdAndRoomNumber(existing.getHouseId(), roomNumber)) {
             throw new DuplicateResourceException(
-                    "Room number already exists in this house: " + request.getRoomNumber());
+                    "Room number already exists in this house: " + roomNumber);
         }
 
         existing.setRoomTypeId(request.getRoomTypeId());
-        existing.setRoomNumber(request.getRoomNumber());
+        if (roomNumber != null) {
+            existing.setRoomNumber(roomNumber);
+        }
         existing.setName(request.getName());
         existing.setFloorNumber(request.getFloorNumber());
         if (request.getMonthlyRent() != null) {
@@ -141,6 +162,37 @@ public class RoomServiceImpl implements RoomService {
             existing.setStatus(request.getStatus());
         }
         existing.setDescription(request.getDescription());
+
+        if (request.getPropertyType() != null) {
+            existing.setPropertyType(request.getPropertyType());
+        }
+        if (request.getListingScope() != null) {
+            existing.setListingScope(request.getListingScope());
+        }
+        if (request.getFurnishing() != null) {
+            existing.setFurnishing(request.getFurnishing());
+        }
+        if (request.getAvailableFrom() != null) {
+            existing.setAvailableFrom(request.getAvailableFrom());
+        }
+        if (request.getAdvancePayment() != null) {
+            existing.setAdvancePayment(request.getAdvancePayment());
+        }
+        if (request.getBedrooms() != null) {
+            existing.setBedrooms(request.getBedrooms());
+        }
+        if (request.getBathrooms() != null) {
+            existing.setBathrooms(request.getBathrooms());
+        }
+        if (request.getAreaSqm() != null) {
+            existing.setAreaSqm(request.getAreaSqm());
+        }
+        if (request.getLandSizeSqm() != null) {
+            existing.setLandSizeSqm(request.getLandSizeSqm());
+        }
+        if (request.getNumberOfFloors() != null) {
+            existing.setNumberOfFloors(request.getNumberOfFloors());
+        }
 
         Room saved = roomRepository.save(existing);
         RoomTenantResponse tenant = getActiveTenantForRoom(saved);
@@ -197,6 +249,7 @@ public class RoomServiceImpl implements RoomService {
 
     private boolean canAccess(Room room, Long currentUserId) {
         return room.getOwnerId().equals(currentUserId)
+                || securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)
                 || (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)
                         && userHouseAccessRepository.existsByUserIdAndHouseId(currentUserId, room.getHouseId()));
     }
@@ -208,6 +261,9 @@ public class RoomServiceImpl implements RoomService {
     }
 
     private void verifyHouseAccess(Long houseId, Long currentUserId) {
+        if (securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)) {
+            return;
+        }
         if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
             if (!userHouseAccessRepository.existsByUserIdAndHouseId(currentUserId, houseId)) {
                 throw new AccessDeniedException(

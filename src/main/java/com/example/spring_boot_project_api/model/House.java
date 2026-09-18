@@ -1,10 +1,14 @@
 package com.example.spring_boot_project_api.model;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+
+import com.example.spring_boot_project_api.enums.Furnishing;
+import com.example.spring_boot_project_api.enums.PropertyType;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -37,9 +41,13 @@ public class House {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "owner_id", nullable = false, foreignKey = @ForeignKey(name = "fk_houses_owner"))
+    @ManyToOne(fetch = FetchType.LAZY, optional = true)
+    @JoinColumn(name = "owner_id", nullable = true, foreignKey = @ForeignKey(name = "fk_houses_owner"))
     private User owner;
+
+    /** Property ownership record when the owner does not have a TeasJul account. */
+    @Column(name = "owner_record_id")
+    private Long ownerRecordId;
 
     @Column(name = "name", nullable = false, length = 200)
     private String name;
@@ -62,6 +70,12 @@ public class House {
     @Column(name = "longitude", precision = 11, scale = 8)
     private BigDecimal longitude;
 
+    @Column(name = "city_province", length = 100)
+    private String cityProvince;
+
+    @Column(name = "google_maps_url", length = 1000)
+    private String googleMapsUrl;
+
     @Builder.Default
     @Column(name = "total_rooms", nullable = false)
     private Integer totalRooms = 0;
@@ -77,6 +91,35 @@ public class House {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, columnDefinition = "ENUM('ACTIVE','INACTIVE','MAINTENANCE') DEFAULT 'ACTIVE'")
     private HouseStatus status = HouseStatus.ACTIVE;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "property_type")
+    private PropertyType propertyType;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "furnishing")
+    private Furnishing furnishing;
+
+    @Column(name = "available_from")
+    private LocalDate availableFrom;
+
+    @Column(name = "advance_payment", precision = 12, scale = 2)
+    private BigDecimal advancePayment;
+
+    @Column(name = "bedrooms")
+    private Integer bedrooms;
+
+    @Column(name = "bathrooms")
+    private Integer bathrooms;
+
+    @Column(name = "area_sqm", precision = 10, scale = 2)
+    private BigDecimal areaSqm;
+
+    @Column(name = "land_size_sqm", precision = 10, scale = 2)
+    private BigDecimal landSizeSqm;
+
+    @Column(name = "number_of_floors")
+    private Integer numberOfFloors;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
