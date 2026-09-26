@@ -361,6 +361,6 @@ public class ManagerDashboardServiceImpl implements ManagerDashboardService {
     }
 
     private static final List<RoomStatus> KNOWN_ROOM_STATUSES =
-            List.of(RoomStatus.AVAILABLE, RoomStatus.OCCUPIED,
+            List.of(RoomStatus.AVAILABLE, RoomStatus.BOOKED, RoomStatus.OCCUPIED,
                     RoomStatus.MAINTENANCE, RoomStatus.RESERVED);
 }

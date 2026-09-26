@@ -9,9 +9,12 @@ import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+
+import jakarta.persistence.LockModeType;
 
 import com.example.spring_boot_project_api.enums.Furnishing;
 import com.example.spring_boot_project_api.enums.ListingScope;
@@ -23,6 +26,10 @@ import com.example.spring_boot_project_api.model.RoomType;
 
 @Repository
 public interface RoomRepository extends JpaRepository<Room, Long> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT r FROM Room r WHERE r.id = :id")
+    Optional<Room> findWithLockById(@Param("id") Long id);
 
     List<Room> findByHouseId(Long houseId);
 

@@ -64,7 +64,7 @@ public class Room {
     private Integer capacity = 1;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, columnDefinition = "ENUM('AVAILABLE','OCCUPIED','MAINTENANCE','RESERVED') DEFAULT 'AVAILABLE'")
+    @Column(name = "status", nullable = false, columnDefinition = "ENUM('AVAILABLE','BOOKED','OCCUPIED','MAINTENANCE','RESERVED') DEFAULT 'AVAILABLE'")
     private RoomStatus status = RoomStatus.AVAILABLE;
 
     @Enumerated(EnumType.STRING)

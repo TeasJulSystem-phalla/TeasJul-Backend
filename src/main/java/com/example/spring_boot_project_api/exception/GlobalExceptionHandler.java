@@ -149,6 +149,12 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(InvalidRoomBookingOperationException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidRoomBookingOperation(
+            InvalidRoomBookingOperationException ex, HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(UtilityTypeNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleUtilityTypeNotFound(
             UtilityTypeNotFoundException ex, HttpServletRequest request) {
@@ -205,6 +211,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(RoomNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleRoomNotFound(RoomNotFoundException ex,
+            HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(RoomBookingNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleRoomBookingNotFound(RoomBookingNotFoundException ex,
             HttpServletRequest request) {
         return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }

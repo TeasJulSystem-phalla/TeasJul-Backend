@@ -36,6 +36,7 @@ import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.service.impl.RentalContractServiceImpl;
+import com.example.spring_boot_project_api.service.RoomBookingService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -48,6 +49,7 @@ class RentalContractServiceImplTest {
     @Mock private UserHouseAccessRepository userHouseAccessRepository;
     @Mock private SecurityUtils securityUtils;
     @Mock private NotificationService notificationService;
+    @Mock private RoomBookingService roomBookingService;
     @Spy private RentalContractMapper contractMapper = new RentalContractMapper();
 
     @InjectMocks private RentalContractServiceImpl rentalContractService;

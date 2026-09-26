@@ -18,6 +18,7 @@ import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.service.RentalContractService;
 import com.example.spring_boot_project_api.service.NotificationService;
+import com.example.spring_boot_project_api.service.RoomBookingService;
 import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
@@ -54,6 +55,7 @@ public class RentalContractServiceImpl implements RentalContractService {
     private final RentalContractMapper contractMapper;
     private final SecurityUtils securityUtils;
     private final NotificationService notificationService;
+    private final RoomBookingService roomBookingService;
 
     @Override
     public RentalContractResponse createContract(RentalContractRequest request) {
@@ -72,6 +74,7 @@ public class RentalContractServiceImpl implements RentalContractService {
         contract.setContractNo(generateUniqueContractNo());
         applyStatusRules(contract);
         RentalContract savedContract = contractRepository.save(contract);
+        completeBookingWhenContractStarts(savedContract);
         try {
             notificationService.notifyContractExpiring(savedContract);
         } catch (RuntimeException e) {
@@ -204,6 +207,7 @@ public class RentalContractServiceImpl implements RentalContractService {
         existingContract.setContractNo(existingContractNo);
         applyStatusRules(existingContract);
         RentalContract updatedContract = contractRepository.save(existingContract);
+        completeBookingWhenContractStarts(updatedContract);
         try {
             notificationService.notifyContractExpiring(updatedContract);
         } catch (RuntimeException e) {
@@ -223,6 +227,7 @@ public class RentalContractServiceImpl implements RentalContractService {
         contract.setStatus(status);
         applyStatusRules(contract);
         RentalContract saved = contractRepository.save(contract);
+        completeBookingWhenContractStarts(saved);
         syncRoomStatus(contract.getRoomId());
         return contractMapper.toResponse(saved);
     }
@@ -269,7 +274,7 @@ public class RentalContractServiceImpl implements RentalContractService {
         if (roomId == null) return;
         roomRepository.findById(roomId).ifPresent(room -> {
             boolean hasActiveContract = contractRepository.existsByRoomIdAndStatus(roomId, RentalContractStatus.ACTIVE);
-            if (hasActiveContract && room.getStatus() == RoomStatus.AVAILABLE) {
+            if (hasActiveContract && room.getStatus() != RoomStatus.OCCUPIED) {
                 room.setStatus(RoomStatus.OCCUPIED);
                 roomRepository.save(room);
             } else if (!hasActiveContract && room.getStatus() == RoomStatus.OCCUPIED) {
@@ -277,6 +282,13 @@ public class RentalContractServiceImpl implements RentalContractService {
                 roomRepository.save(room);
             }
         });
+    }
+
+    /** A booking is completed only once the existing rental contract becomes active. */
+    private void completeBookingWhenContractStarts(RentalContract contract) {
+        if (contract.getStatus() == RentalContractStatus.ACTIVE) {
+            roomBookingService.completeBookedForRoom(contract.getRoomId());
+        }
     }
 
     // Business contract numbers are system-generated on the backend. The existing
