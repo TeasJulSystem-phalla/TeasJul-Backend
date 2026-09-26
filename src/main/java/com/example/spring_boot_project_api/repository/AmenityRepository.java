@@ -23,6 +23,10 @@ public interface AmenityRepository extends JpaRepository<Amenity, Long> {
 
     Optional<Amenity> findByOwnerIdAndCode(Long ownerId, String code);
 
+    Optional<Amenity> findByOwnerIdAndCodeIgnoreCase(Long ownerId, String code);
+
+    Optional<Amenity> findByOwnerIdAndNameIgnoreCase(Long ownerId, String name);
+
     Optional<Amenity> findByOwnerIdAndName(Long ownerId, String name);
 
     boolean existsByOwnerIdAndCode(Long ownerId, String code);

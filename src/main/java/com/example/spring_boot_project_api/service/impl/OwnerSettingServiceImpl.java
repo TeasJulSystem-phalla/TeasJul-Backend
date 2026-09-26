@@ -1,6 +1,7 @@
 package com.example.spring_boot_project_api.service.impl;
 
 import java.math.BigDecimal;
+import java.util.Comparator;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
@@ -20,6 +21,7 @@ import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.repository.OwnerSettingRepository;
 import com.example.spring_boot_project_api.repository.TenantRepository;
 import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
+import com.example.spring_boot_project_api.repository.UserRoleRepository;
 import com.example.spring_boot_project_api.service.OwnerSettingService;
 import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
@@ -45,6 +47,7 @@ public class OwnerSettingServiceImpl implements OwnerSettingService {
     private final SecurityUtils securityUtils;
     private final TenantRepository tenantRepository;
     private final UserHouseAccessRepository userHouseAccessRepository;
+    private final UserRoleRepository userRoleRepository;
     private final SecurityAuditLogger securityAuditLogger;
 
     @Override
@@ -151,9 +154,10 @@ public class OwnerSettingServiceImpl implements OwnerSettingService {
     @Transactional
     public ThemeSettingsResponse updateTheme(UpdateThemeRequest request) {
         securityUtils.requirePermission(PermissionConstants.SETTING_UPDATE);
-        User owner = getCurrentOwner();
-        OwnerSetting setting = ownerSettingRepository.findByOwnerId(owner.getId())
-                .orElseGet(() -> createDefaultSettings(owner));
+        User actor = securityUtils.getCurrentUser();
+        User themeOwner = resolveThemeOwner();
+        OwnerSetting setting = ownerSettingRepository.findByOwnerId(themeOwner.getId())
+                .orElseGet(() -> createDefaultSettings(themeOwner));
         try {
             ObjectNode root = (ObjectNode) OBJECT_MAPPER.readTree(setting.getSettings());
             ObjectNode theme = root.putObject("theme");
@@ -164,10 +168,10 @@ public class OwnerSettingServiceImpl implements OwnerSettingService {
 
             OwnerSetting saved = ownerSettingRepository.save(setting);
             ThemeSettingsResponse themeSettings = themeFromSetting(saved);
-            securityAuditLogger.log(owner.getId(), "THEME_UPDATED", themeDetail(themeSettings));
+            securityAuditLogger.log(actor.getId(), "THEME_UPDATED", themeDetail(themeSettings));
             return themeSettings;
         } catch (Exception e) {
-            log.error("Failed to save theme for owner: {}", owner.getId(), e);
+            log.error("Failed to save theme for owner: {}", themeOwner.getId(), e);
             throw new RuntimeException("Failed to save theme", e);
         }
     }
@@ -176,9 +180,10 @@ public class OwnerSettingServiceImpl implements OwnerSettingService {
     @Transactional
     public ThemeSettingsResponse resetTheme() {
         securityUtils.requirePermission(PermissionConstants.SETTING_UPDATE);
-        User owner = getCurrentOwner();
-        OwnerSetting setting = ownerSettingRepository.findByOwnerId(owner.getId())
-                .orElseGet(() -> createDefaultSettings(owner));
+        User actor = securityUtils.getCurrentUser();
+        User themeOwner = resolveThemeOwner();
+        OwnerSetting setting = ownerSettingRepository.findByOwnerId(themeOwner.getId())
+                .orElseGet(() -> createDefaultSettings(themeOwner));
         try {
             ObjectNode root = (ObjectNode) OBJECT_MAPPER.readTree(setting.getSettings());
             ObjectNode theme = root.putObject("theme");
@@ -189,10 +194,10 @@ public class OwnerSettingServiceImpl implements OwnerSettingService {
 
             OwnerSetting saved = ownerSettingRepository.save(setting);
             ThemeSettingsResponse themeSettings = themeFromSetting(saved);
-            securityAuditLogger.log(owner.getId(), "THEME_RESET", themeDetail(themeSettings));
+            securityAuditLogger.log(actor.getId(), "THEME_RESET", themeDetail(themeSettings));
             return themeSettings;
         } catch (Exception e) {
-            log.error("Failed to reset theme for owner: {}", owner.getId(), e);
+            log.error("Failed to reset theme for owner: {}", themeOwner.getId(), e);
             throw new RuntimeException("Failed to reset theme", e);
         }
     }
@@ -285,11 +290,19 @@ public class OwnerSettingServiceImpl implements OwnerSettingService {
      * Resolves the organization (owner) the current user belongs to, so that all
      * roles in the same organization see the owner's saved theme. The owner is
      * always derived from the authenticated context - never from the client.
+     *
+     * <p>A SUPER_ADMIN belongs to no organization, so it resolves the system
+     * owner: the theme stays a single shared value that the owner and the super
+     * admin always read and write on the same settings row.</p>
      */
     private Long resolveOrganizationOwnerId() {
         User user = securityUtils.getCurrentUser();
         if (securityUtils.hasRole(SecurityUtils.ROLE_OWNER)) {
             return user.getId();
+        }
+        if (securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)) {
+            User systemOwner = findSystemOwner();
+            return systemOwner == null ? null : systemOwner.getId();
         }
         if (securityUtils.hasRole(SecurityUtils.ROLE_TENANT)) {
             return tenantRepository.findByUserId(user.getId())
@@ -299,6 +312,38 @@ public class OwnerSettingServiceImpl implements OwnerSettingService {
         return userHouseAccessRepository.findOwnerIdsByUserId(user.getId())
                 .stream()
                 .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * Resolves the owner whose settings row backs the shared system theme and
+     * asserts the caller may edit it. OWNER edits its own row; SUPER_ADMIN
+     * edits the system owner's row so both roles share one persisted value.
+     * MANAGER and TENANT are rejected.
+     */
+    private User resolveThemeOwner() {
+        User user = securityUtils.getCurrentUser();
+        if (securityUtils.hasRole(SecurityUtils.ROLE_OWNER)) {
+            return user;
+        }
+        if (securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)) {
+            User systemOwner = findSystemOwner();
+            if (systemOwner == null) {
+                throw new IllegalStateException("No owner is configured to hold the system theme");
+            }
+            return systemOwner;
+        }
+        throw new AccessDeniedException("Only owners and super admins can manage the theme");
+    }
+
+    /**
+     * The system-wide owner backing the shared theme: the lowest-id user holding
+     * the OWNER role, so the choice is stable across requests and processes.
+     */
+    private User findSystemOwner() {
+        return userRoleRepository.findUsersByRoleCode(SecurityUtils.ROLE_OWNER)
+                .stream()
+                .min(Comparator.comparing(User::getId))
                 .orElse(null);
     }
 

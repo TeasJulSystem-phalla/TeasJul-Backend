@@ -23,6 +23,7 @@ import com.example.spring_boot_project_api.dto.response.BulkUtilityReadingRespon
 import com.example.spring_boot_project_api.dto.response.MonthlyReadingRowResponse;
 import com.example.spring_boot_project_api.dto.response.PageResponse;
 import com.example.spring_boot_project_api.dto.response.UtilityReadingResponse;
+import com.example.spring_boot_project_api.enums.ReadingStatusFilter;
 import com.example.spring_boot_project_api.service.UtilityReadingService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -63,15 +64,33 @@ public class UtilityReadingController {
     }
 
     @Operation(summary = "Monthly meter-reading sheet",
-            description = "Returns one row per ACTIVE meter of the house for the given billing "
-                    + "month. Each row carries the previous reading (last reading before the "
-                    + "month) and the current reading already recorded inside the month, if any.")
+            description = "Returns one row per ACTIVE meter of the selected house scope for the "
+                    + "given billing month. Each row carries the previous reading (last reading "
+                    + "before the month) and the current reading already recorded inside the "
+                    + "month, if any. WHEN houseId IS OMITTED the whole accessible house scope of "
+                    + "the authenticated user is used. Supports optional floor, search (room "
+                    + "number / tenant name / meter number) and reading-status (ENTERED / "
+                    + "NOT_ENTERED) filters evaluated on persisted data.")
     @GetMapping("/monthly-sheet")
     public ResponseEntity<List<MonthlyReadingRowResponse>> getMonthlySheet(
-            @RequestParam Long houseId,
+            @RequestParam(required = false) Long houseId,
             @RequestParam Integer year,
-            @RequestParam Integer month) {
-        return ResponseEntity.ok(utilityReadingService.getMonthlySheet(houseId, year, month));
+            @RequestParam Integer month,
+            @RequestParam(required = false) Integer floor,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) ReadingStatusFilter status) {
+        return ResponseEntity.ok(utilityReadingService.getMonthlySheet(
+                houseId, year, month, floor, search, status));
+    }
+
+    @Operation(summary = "Floors with meters for the monthly sheet",
+            description = "Distinct floor numbers (sorted ascending) that currently have ACTIVE "
+                    + "meters within the selected house scope. When houseId is omitted the whole "
+                    + "accessible house scope of the authenticated user is used.")
+    @GetMapping("/floors")
+    public ResponseEntity<List<Integer>> getMonthlySheetFloors(
+            @RequestParam(required = false) Long houseId) {
+        return ResponseEntity.ok(utilityReadingService.getMonthlySheetFloors(houseId));
     }
 
     @Operation(summary = "Get a utility reading by id",

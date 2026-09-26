@@ -12,6 +12,8 @@ import com.example.spring_boot_project_api.dto.request.LoginRequest;
 import com.example.spring_boot_project_api.dto.request.RegisterRequest;
 import com.example.spring_boot_project_api.dto.response.LoginResponse;
 import com.example.spring_boot_project_api.dto.response.UserResponse;
+import com.example.spring_boot_project_api.enums.LoginMethod;
+import com.example.spring_boot_project_api.enums.LoginOutcome;
 import com.example.spring_boot_project_api.exception.DuplicateResourceException;
 import com.example.spring_boot_project_api.exception.InvalidEmailException;
 import com.example.spring_boot_project_api.mapper.UserMapper;
@@ -19,6 +21,7 @@ import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.model.UserStatus;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.AuthService;
+import com.example.spring_boot_project_api.service.LoginHistoryService;
 import com.example.spring_boot_project_api.service.UserService;
 import com.example.spring_boot_project_api.util.EmailValidator;
 import com.example.spring_boot_project_api.util.JwtUtil;
@@ -36,6 +39,8 @@ public class AuthServiceImpl implements AuthService {
     private final JwtUtil jwtUtil;
     private final UserMapper userMapper;
     private final SecurityServiceImpl securityService;
+    private final LoginHistoryService loginHistoryService;
+    private final SecurityAuditLogger audit;
 
     @Override
     @Transactional
@@ -64,14 +69,31 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public Object login(LoginRequest request, HttpServletRequest http) {
-        User user = authenticate(request.usernameOrEmail(), request.password());
+        User user;
+        try {
+            user = authenticate(request.usernameOrEmail(), request.password());
+        } catch (RuntimeException ex) {
+            // A rejected attempt is still a security signal worth keeping. The
+            // user is attached only when the identifier resolved to an account,
+            // so probing unknown usernames is recorded too. No credential is
+            // ever part of the record.
+            User rejected = resolveUserQuietly(request.usernameOrEmail());
+            loginHistoryService.record(rejected, LoginOutcome.FAILED, LoginMethod.PASSWORD, http);
+            audit.log(rejected == null ? null : rejected.getId(), "LOGIN_FAILED", http,
+                    "method=PASSWORD reason=" + ex.getClass().getSimpleName());
+            throw ex;
+        }
+
+        if (securityService.requiresTwoFactor(user)) {
+            // Authentication is not complete yet: no SUCCESS record and no
+            // lastLoginAt update until the challenge is verified.
+            return securityService.createTwoFactorChallenge(user, http);
+        }
 
         user.setLastLoginAt(LocalDateTime.now());
         user = userService.createUser(user);
-
-        if (securityService.requiresTwoFactor(user)) {
-            return securityService.createTwoFactorChallenge(user, http);
-        }
+        loginHistoryService.record(user, LoginOutcome.SUCCESS, LoginMethod.PASSWORD, http);
+        audit.log(user.getId(), "LOGIN_SUCCESS", http, "method=PASSWORD");
 
         String token = jwtUtil.generateToken(user.getUsername());
         return new LoginResponse(token, "Bearer", jwtUtil.getExpirationMs(),
@@ -87,6 +109,8 @@ public class AuthServiceImpl implements AuthService {
                 .orElseThrow(() -> new BadCredentialsException("Invalid username or password"));
         user.setLastLoginAt(LocalDateTime.now());
         user = userService.createUser(user);
+        loginHistoryService.record(user, LoginOutcome.SUCCESS, LoginMethod.PASSWORD_2FA, http);
+        audit.log(user.getId(), "LOGIN_SUCCESS", http, "method=PASSWORD_2FA");
 
         String token = jwtUtil.generateToken(user.getUsername());
         return new LoginResponse(token, "Bearer", jwtUtil.getExpirationMs(),
@@ -103,6 +127,24 @@ public class AuthServiceImpl implements AuthService {
             throw new LockedException("Account is locked or inactive");
         }
         return user;
+    }
+
+    /**
+     * Resolves the account behind a failed sign-in without ever throwing, so the
+     * failure path is not replaced by a lookup error. Returns {@code null} when
+     * the identifier matches no account.
+     */
+    private User resolveUserQuietly(String usernameOrEmail) {
+        if (usernameOrEmail == null || usernameOrEmail.isBlank()) {
+            return null;
+        }
+        try {
+            return userRepository.findByUsername(usernameOrEmail)
+                    .or(() -> userRepository.findByEmail(usernameOrEmail))
+                    .orElse(null);
+        } catch (RuntimeException ex) {
+            return null;
+        }
     }
 
     private User findUserByUsernameOrEmail(String usernameOrEmail) {

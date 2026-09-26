@@ -44,13 +44,17 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional(readOnly = true)
     public RoleResponse getRoleById(Long id) {
-        return roleMapper.toResponse(getEntityById(id));
+        Role role = getEntityById(id);
+        ensureOwnerMayManage(role);
+        return roleMapper.toResponse(role);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<RoleResponse> getAllRoles() {
+        boolean restrictSuperAdmin = securityUtils.isOwnerWithoutSuperAdmin();
         return roleRepository.findAll().stream()
+                .filter(role -> !(restrictSuperAdmin && isSuperAdminRole(role.getCode())))
                 .map(roleMapper::toResponse)
                 .toList();
     }
@@ -60,6 +64,7 @@ public class RoleServiceImpl implements RoleService {
     public RoleResponse updateRole(Long id, UpdateRoleRequest request) {
         requireOwner();
         Role role = getEntityById(id);
+        ensureOwnerMayManage(role);
 
         if (request.code() != null && roleRepository.existsByCodeAndIdNot(request.code(), id)) {
             throw new DuplicateResourceException("Role code already exists: " + request.code());
@@ -86,6 +91,7 @@ public class RoleServiceImpl implements RoleService {
     public void deleteRole(Long id) {
         requireOwner();
         Role role = getEntityById(id);
+        ensureOwnerMayManage(role);
 
         if (Boolean.TRUE.equals(role.getIsSystemRole())) {
             throw new AccessDeniedException("System roles cannot be deleted");
@@ -99,6 +105,20 @@ public class RoleServiceImpl implements RoleService {
                 && !securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)) {
             throw new AccessDeniedException("You do not have permission to access this resource");
         }
+    }
+
+    /**
+     * An OWNER (who is not also a SUPER_ADMIN) must never access or manage the
+     * SUPER_ADMIN role. SUPER_ADMIN users keep full access.
+     */
+    private void ensureOwnerMayManage(Role role) {
+        if (securityUtils.isOwnerWithoutSuperAdmin() && isSuperAdminRole(role.getCode())) {
+            throw new AccessDeniedException("You do not have permission to access this resource");
+        }
+    }
+
+    private boolean isSuperAdminRole(String code) {
+        return SecurityUtils.ROLE_SUPER_ADMIN.equalsIgnoreCase(code);
     }
 
     private Role getEntityById(Long id) {

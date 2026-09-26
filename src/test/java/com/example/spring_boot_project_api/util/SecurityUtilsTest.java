@@ -161,6 +161,32 @@ class SecurityUtilsTest {
                 .isInstanceOf(AccessDeniedException.class);
     }
 
+    @Test
+    void isOwnerWithoutSuperAdminTrueWhenOwnerOnly() {
+        authenticateAs(user);
+        when(userRoleRepository.existsByUserIdAndRoleCode(10L, SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(false);
+        when(userRoleRepository.existsByUserIdAndRoleCode(10L, SecurityUtils.ROLE_OWNER)).thenReturn(true);
+
+        assertThat(securityUtils.isOwnerWithoutSuperAdmin()).isTrue();
+    }
+
+    @Test
+    void isOwnerWithoutSuperAdminFalseWhenAlsoSuperAdmin() {
+        authenticateAs(user);
+        when(userRoleRepository.existsByUserIdAndRoleCode(10L, SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(true);
+        when(userRoleRepository.existsByUserIdAndRoleCode(10L, SecurityUtils.ROLE_OWNER)).thenReturn(true);
+
+        assertThat(securityUtils.isOwnerWithoutSuperAdmin()).isFalse();
+    }
+
+    @Test
+    void isOwnerWithoutSuperAdminFalseWhenNotOwner() {
+        authenticateAs(user);
+        when(userRoleRepository.existsByUserIdAndRoleCode(10L, SecurityUtils.ROLE_OWNER)).thenReturn(false);
+
+        assertThat(securityUtils.isOwnerWithoutSuperAdmin()).isFalse();
+    }
+
     private void denySuperAdminRole() {
         when(userRoleRepository.existsByUserIdAndRoleCode(10L, SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(false);
     }

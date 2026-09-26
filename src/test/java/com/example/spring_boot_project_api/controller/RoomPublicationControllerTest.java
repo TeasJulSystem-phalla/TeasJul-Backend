@@ -198,7 +198,8 @@ class RoomPublicationControllerTest {
         PageImpl<Room> page = new PageImpl<>(List.of(new Room()),
                 PageRequest.of(0, 10), 1);
         when(roomPublicationService.getRoomsForReview(
-                eq(RoomPublicationStatus.PENDING_APPROVAL), any(org.springframework.data.domain.Pageable.class)))
+                eq(RoomPublicationStatus.PENDING_APPROVAL), eq(null),
+                any(org.springframework.data.domain.Pageable.class)))
                 .thenReturn(page);
         when(roomMapper.toDto(any(Room.class))).thenReturn(pending);
 
@@ -208,5 +209,61 @@ class RoomPublicationControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(1))
                 .andExpect(jsonPath("$.content[0].roomNumber").value("101"));
+
+        verify(roomPublicationService).getRoomsForReview(
+                eq(RoomPublicationStatus.PENDING_APPROVAL), eq(null),
+                any(org.springframework.data.domain.Pageable.class));
+    }
+
+    @Test
+    void listRoomsForReviewShouldForwardRoomStatusFilter() throws Exception {
+        allowJwt();
+        RoomResponse published = sampleResponse();
+        published.setPublicationStatus(RoomPublicationStatus.PUBLISHED);
+        PageImpl<Room> page = new PageImpl<>(List.of(new Room()),
+                PageRequest.of(0, 10), 1);
+        when(roomPublicationService.getRoomsForReview(
+                eq(RoomPublicationStatus.PUBLISHED), eq(RoomStatus.AVAILABLE),
+                any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(page);
+        when(roomMapper.toDto(any(Room.class))).thenReturn(published);
+
+        mockMvc.perform(get("/api/admin/rooms/publication")
+                        .param("status", "PUBLISHED")
+                        .param("roomStatus", "AVAILABLE")
+                        .header("Authorization", "Bearer " + validToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].publicationStatus").value("PUBLISHED"));
+
+        verify(roomPublicationService).getRoomsForReview(
+                eq(RoomPublicationStatus.PUBLISHED), eq(RoomStatus.AVAILABLE),
+                any(org.springframework.data.domain.Pageable.class));
+    }
+
+    @Test
+    void listRoomsForReviewShouldAcceptOccupiedRoomStatus() throws Exception {
+        allowJwt();
+        RoomResponse occupied = sampleResponse();
+        occupied.setPublicationStatus(RoomPublicationStatus.PUBLISHED);
+        occupied.setStatus(RoomStatus.OCCUPIED);
+        PageImpl<Room> page = new PageImpl<>(List.of(new Room()),
+                PageRequest.of(0, 10), 1);
+        when(roomPublicationService.getRoomsForReview(
+                eq(RoomPublicationStatus.PUBLISHED), eq(RoomStatus.OCCUPIED),
+                any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(page);
+        when(roomMapper.toDto(any(Room.class))).thenReturn(occupied);
+
+        mockMvc.perform(get("/api/admin/rooms/publication")
+                        .param("status", "PUBLISHED")
+                        .param("roomStatus", "OCCUPIED")
+                        .header("Authorization", "Bearer " + validToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].status").value("OCCUPIED"));
+
+        verify(roomPublicationService).getRoomsForReview(
+                eq(RoomPublicationStatus.PUBLISHED), eq(RoomStatus.OCCUPIED),
+                any(org.springframework.data.domain.Pageable.class));
     }
 }

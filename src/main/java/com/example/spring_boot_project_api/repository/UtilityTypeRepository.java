@@ -16,6 +16,12 @@ public interface UtilityTypeRepository
 
     Optional<UtilityType> findByIdAndOwnerId(Long id, Long ownerId);
 
+    Optional<UtilityType> findByOwnerIdAndCode(Long ownerId, String code);
+
+    Optional<UtilityType> findByOwnerIdAndCodeIgnoreCase(Long ownerId, String code);
+
+    Optional<UtilityType> findByOwnerIdAndNameIgnoreCase(Long ownerId, String name);
+
     List<UtilityType> findByOwnerIdIn(Collection<Long> ownerIds);
 
     List<UtilityType> findByIdInAndStatus(Collection<Long> ids,

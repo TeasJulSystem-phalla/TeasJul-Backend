@@ -7,9 +7,11 @@ import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
@@ -25,6 +27,8 @@ import com.example.spring_boot_project_api.dto.request.AddInvoiceItemRequest;
 import com.example.spring_boot_project_api.dto.request.BulkGenerateInvoiceRequest;
 import com.example.spring_boot_project_api.dto.request.GenerateInvoiceRequest;
 import com.example.spring_boot_project_api.dto.response.BulkGenerateInvoiceResponse;
+import com.example.spring_boot_project_api.dto.response.ContractEligibleResponse;
+import com.example.spring_boot_project_api.dto.response.GenerateBulkPreviewResponse;
 import com.example.spring_boot_project_api.dto.response.InvoiceItemResponse;
 import com.example.spring_boot_project_api.dto.response.InvoicePreviewResponse;
 import com.example.spring_boot_project_api.dto.response.InvoiceResponse;
@@ -196,20 +200,11 @@ public class InvoiceServiceImpl implements InvoiceService {
     @Transactional
     public BulkGenerateInvoiceResponse generateBulkInvoices(BulkGenerateInvoiceRequest request) {
         securityUtils.requirePermission(PermissionConstants.INVOICE_CREATE);
-        User owner = getCurrentOwner();
-        Long ownerId = owner.getId();
         verifyOwnerOrManagerRole();
 
-        List<RentalContract> activeContracts;
-        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
-            List<Long> managedOwnerIds = new ArrayList<>(userHouseAccessRepository.findOwnerIdsByUserId(securityUtils.getCurrentUserId()));
-            if (!managedOwnerIds.contains(ownerId)) {
-                managedOwnerIds.add(ownerId);
-            }
-            activeContracts = contractRepository.findByOwnerIdInAndStatus(managedOwnerIds, RentalContractStatus.ACTIVE);
-        } else {
-            activeContracts = contractRepository.findByOwnerIdAndStatus(ownerId, RentalContractStatus.ACTIVE);
-        }
+        List<Long> houseIds = resolveEligibleHouseScope(request.houseId());
+        List<RentalContract> activeContracts = houseIds.isEmpty() ? List.of()
+                : contractRepository.findByRoomHouseIdInAndStatus(houseIds, RentalContractStatus.ACTIVE);
 
         List<InvoiceResponse> createdInvoices = new ArrayList<>();
         List<String> skippedReasons = new ArrayList<>();
@@ -245,6 +240,116 @@ public class InvoiceServiceImpl implements InvoiceService {
                 createdInvoices,
                 skippedReasons,
                 errors);
+    }
+
+    // ---- Invoice generation eligibility --------------------------------
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<ContractEligibleResponse> getEligibleContracts(Long houseId, String search,
+            Integer billingYear, Integer billingMonth, Pageable pageable) {
+        securityUtils.requirePermission(PermissionConstants.INVOICE_CREATE);
+        verifyOwnerOrManagerRole();
+
+        List<Long> houseIds = resolveEligibleHouseScope(houseId);
+        if (houseIds.isEmpty()) {
+            return PageResponse.of(List.of(), pageable.getPageNumber(), pageable.getPageSize(), 0, 0);
+        }
+
+        String normalizedSearch = (search == null || search.isBlank()) ? null : search.trim();
+        Page<RentalContract> page = contractRepository.findEligibleForInvoice(
+                houseIds, normalizedSearch, RentalContractStatus.ACTIVE, pageable);
+
+        List<RentalContract> contracts = page.getContent();
+        List<Long> contractIds = contracts.stream()
+                .map(RentalContract::getId)
+                .filter(Objects::nonNull)
+                .toList();
+
+        Set<Long> invoicedContractIds = new HashSet<>();
+        if (billingYear != null && billingMonth != null && !contractIds.isEmpty()) {
+            invoicedContractIds.addAll(invoiceRepository.findInvoicedContractIds(
+                    contractIds, billingYear, billingMonth));
+        }
+
+        List<Long> roomIds = contracts.stream()
+                .map(RentalContract::getRoomId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, Room> rooms = roomIds.isEmpty() ? Map.of()
+                : roomRepository.findAllById(roomIds).stream()
+                        .collect(Collectors.toMap(Room::getId, r -> r));
+
+        List<Long> rowHouseIds = rooms.values().stream()
+                .map(Room::getHouseId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, House> houses = rowHouseIds.isEmpty() ? Map.of()
+                : houseRepository.findAllById(rowHouseIds).stream()
+                        .collect(Collectors.toMap(House::getId, h -> h));
+
+        Map<Long, ContractTenant> primaryLinks = primaryTenantLinks(contractIds);
+        List<Long> tenantIds = primaryLinks.values().stream()
+                .map(ContractTenant::getTenantId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, Tenant> tenants = tenantIds.isEmpty() ? Map.of()
+                : tenantRepository.findAllById(tenantIds).stream()
+                        .collect(Collectors.toMap(Tenant::getId, t -> t));
+
+        List<ContractEligibleResponse> content = contracts.stream()
+                .map(contract -> {
+                    Room rowRoom = rooms.get(contract.getRoomId());
+                    House rowHouse = rowRoom != null ? houses.get(rowRoom.getHouseId()) : null;
+                    ContractTenant link = primaryLinks.get(contract.getId());
+                    Tenant tenant = link != null ? tenants.get(link.getTenantId()) : null;
+                    String tenantName = tenant != null
+                            ? (tenant.getFirstName() + " " + tenant.getLastName()).trim()
+                            : null;
+                    return new ContractEligibleResponse(
+                            contract.getId(),
+                            contract.getContractNo(),
+                            tenant != null ? tenant.getId() : null,
+                            tenantName,
+                            rowRoom != null ? rowRoom.getId() : null,
+                            rowRoom != null ? rowRoom.getRoomNumber() : null,
+                            rowHouse != null ? rowHouse.getId() : null,
+                            rowHouse != null ? rowHouse.getName() : null,
+                            contract.getMonthlyRent(),
+                            contract.getStartDate(),
+                            contract.getEndDate(),
+                            invoicedContractIds.contains(contract.getId()));
+                })
+                .toList();
+
+        return PageResponse.of(content, page.getNumber(), page.getSize(),
+                page.getTotalElements(), page.getTotalPages());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public GenerateBulkPreviewResponse previewBulkGeneration(Long houseId,
+            Integer billingYear, Integer billingMonth) {
+        securityUtils.requirePermission(PermissionConstants.INVOICE_CREATE);
+        verifyOwnerOrManagerRole();
+
+        YearMonth period = resolveBillingPeriod(billingYear, billingMonth);
+        List<Long> houseIds = resolveEligibleHouseScope(houseId);
+
+        long active = 0L;
+        long alreadyInvoiced = 0L;
+        if (!houseIds.isEmpty()) {
+            active = contractRepository.countActiveByHouseIds(houseIds, RentalContractStatus.ACTIVE);
+            alreadyInvoiced = contractRepository.countAlreadyInvoicedByHouseIds(
+                    houseIds, RentalContractStatus.ACTIVE, period.getYear(), period.getMonthValue());
+        }
+        long toGenerate = Math.max(active - alreadyInvoiced, 0L);
+
+        return new GenerateBulkPreviewResponse(active, alreadyInvoiced, toGenerate,
+                period.getMonthValue(), period.getYear());
     }
 
     // ---- List ---------------------------------------------------------
@@ -670,11 +775,6 @@ public class InvoiceServiceImpl implements InvoiceService {
         LocalDate periodEnd = ym.atEndOfMonth();
 
         for (RoomUtility ru : ctx.roomUtilities()) {
-            // Included utilities are part of the rent. They must not require a
-            // utility type, meter, reading, or rate, and must not create a $0 line.
-            if (Boolean.TRUE.equals(ru.getIsIncluded())) {
-                continue;
-            }
             UtilityType type = typeRepository.findByIdAndOwnerId(
                     ru.getUtilityTypeId(), ctx.owner().getId())
                     .orElseThrow(() -> new InvalidInvoiceOperationException(
@@ -691,18 +791,26 @@ public class InvoiceServiceImpl implements InvoiceService {
             if (type.getBillingMethod() == UtilityBillingMethod.METERED) {
                 meter = activeMeterForRoomAndType(ctx.room().getId(), type.getId(), ctx.owner().getId());
                 if (meter == null) {
-                    throw new InvalidInvoiceOperationException(
-                            "Metered utility " + type.getName()
-                                    + " has no ACTIVE meter for room " + ctx.room().getRoomNumber());
+                    // No ACTIVE meter means no reading can be attributed to this
+                    // room/type for the period, so no usage-based charge is
+                    // invented: the utility is skipped instead of failing the invoice.
+                    log.warn("Skipping metered utility {} for room {} in {}: "
+                                    + "no ACTIVE meter is assigned",
+                            type.getName(), ctx.room().getRoomNumber(), ym);
+                    continue;
                 }
 
                 UtilityReading baseline = readingAtOrBefore(meter.getId(), periodStart.minusDays(1));
                 UtilityReading periodReading = readingOnOrBefore(meter.getId(), periodEnd);
 
                 if (periodReading == null) {
-                    throw new InvalidInvoiceOperationException(
-                            "Missing " + type.getName() + " reading for " + ym
-                                    + " (room " + ctx.room().getRoomNumber() + ")");
+                    // No reading recorded by the end of the billing period: the
+                    // usage cannot be computed, so the utility is skipped instead
+                    // of failing the whole invoice.
+                    log.warn("Skipping metered utility {} for room {} in {}: "
+                                    + "no meter reading on or before {}",
+                            type.getName(), ctx.room().getRoomNumber(), ym, periodEnd);
+                    continue;
                 }
 
                 BigDecimal baselineValue = baseline != null ? baseline.getCurrentReading() : BigDecimal.ZERO;
@@ -881,6 +989,33 @@ public class InvoiceServiceImpl implements InvoiceService {
                 && !securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
             throw new AccessDeniedException("Only owners and managers can manage invoices");
         }
+    }
+
+    /**
+     * Resolves the house scope for invoice generation. When a specific house is
+     * requested it is validated against the current user's access; otherwise all
+     * accessible houses are used (an owner/manager without houses gets no scope).
+     */
+    private List<Long> resolveEligibleHouseScope(Long houseId) {
+        if (houseId != null) {
+            houseAccessService.requireHouseAccess(houseId);
+            return List.of(houseId);
+        }
+        List<Long> accessibleHouseIds = houseAccessService.getAccessibleHouseIds();
+        return accessibleHouseIds != null ? accessibleHouseIds : List.of();
+    }
+
+    private YearMonth resolveBillingPeriod(Integer billingYear, Integer billingMonth) {
+        YearMonth now = YearMonth.now();
+        int year = billingYear != null ? billingYear : now.getYear();
+        int month = billingMonth != null ? billingMonth : now.getMonthValue();
+        if (year < 2000) {
+            throw new InvalidInvoiceOperationException("Billing year must be at least 2000");
+        }
+        if (month < 1 || month > 12) {
+            throw new InvalidInvoiceOperationException("Billing month must be between 1 and 12");
+        }
+        return YearMonth.of(year, month);
     }
 
     private User getCurrentOwner() {

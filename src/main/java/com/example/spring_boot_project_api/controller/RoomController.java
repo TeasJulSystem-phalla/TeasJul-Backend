@@ -16,13 +16,18 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.example.spring_boot_project_api.dto.request.BulkRoomAmenityRequest;
+import com.example.spring_boot_project_api.dto.request.BulkRoomUtilityRequest;
 import com.example.spring_boot_project_api.dto.request.RoomImportRequest;
 import com.example.spring_boot_project_api.dto.request.RoomRepuest;
+import com.example.spring_boot_project_api.dto.response.BulkAssignmentResponse;
 import com.example.spring_boot_project_api.dto.response.RoomImportPreviewResponse;
 import com.example.spring_boot_project_api.dto.response.RoomImportResult;
 import com.example.spring_boot_project_api.dto.response.RoomResponse;
+import com.example.spring_boot_project_api.service.RoomAmenityService;
 import com.example.spring_boot_project_api.service.RoomImportService;
 import com.example.spring_boot_project_api.service.RoomService;
+import com.example.spring_boot_project_api.service.RoomUtilityService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -37,6 +42,8 @@ public class RoomController {
 
     private final RoomService roomService;
     private final RoomImportService roomImportService;
+    private final RoomUtilityService roomUtilityService;
+    private final RoomAmenityService roomAmenityService;
 
     @Operation(summary = "Create a new room",
             description = "Creates a room. Room number must be unique within its house.")
@@ -87,6 +94,26 @@ public class RoomController {
             @Valid @RequestBody RoomImportRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(roomImportService.importRooms(request));
+    }
+
+    @Operation(summary = "Bulk assign utilities to many rooms",
+            description = "Assigns the given utility types to all given rooms at once. "
+                    + "Existing ACTIVE assignments are skipped and reported in the summary. "
+                    + "Rooms or utility types that cannot be assigned become per-item failures.")
+    @PostMapping("/bulk-utilities")
+    public ResponseEntity<BulkAssignmentResponse> bulkAssignUtilities(
+            @Valid @RequestBody BulkRoomUtilityRequest request) {
+        return ResponseEntity.ok(roomUtilityService.bulkAssignUtilities(request));
+    }
+
+    @Operation(summary = "Bulk assign amenities to many rooms",
+            description = "Assigns the given amenities to all given rooms at once. "
+                    + "Existing assignments are skipped and reported in the summary. "
+                    + "Rooms or amenities that cannot be assigned become per-item failures.")
+    @PostMapping("/bulk-amenities")
+    public ResponseEntity<BulkAssignmentResponse> bulkAssignAmenities(
+            @Valid @RequestBody BulkRoomAmenityRequest request) {
+        return ResponseEntity.ok(roomAmenityService.bulkAssignAmenities(request));
     }
 
     @Operation(summary = "Update a room",

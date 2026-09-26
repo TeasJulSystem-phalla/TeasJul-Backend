@@ -33,9 +33,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -64,14 +66,11 @@ public class RentalContractServiceImpl implements RentalContractService {
         }
 
         Long ownerId = targetRoom.getOwnerId();
-        contractRepository.findByOwnerIdAndContractNo(ownerId, request.getContractNo())
-                .ifPresent(c -> {
-                    throw new DuplicateResourceException(
-                            "Contract number already exists for this owner: " + request.getContractNo());
-                });
 
         RentalContract contract = contractMapper.toEntity(request);
         contract.setOwnerId(ownerId);
+        contract.setContractNo(generateUniqueContractNo());
+        applyStatusRules(contract);
         RentalContract savedContract = contractRepository.save(contract);
         try {
             notificationService.notifyContractExpiring(savedContract);
@@ -83,17 +82,19 @@ public class RentalContractServiceImpl implements RentalContractService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public RentalContractResponse getContractById(Long id) {
         securityUtils.requirePermission(PermissionConstants.CONTRACT_VIEW);
+        expireExpiredContracts();
         return contractMapper.toResponse(getAccessibleContract(id));
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public PageResponse<RentalContractResponse> getContractsByOwner(Long ownerId, String search,
             RentalContractStatus status, Pageable pageable) {
         securityUtils.requirePermission(PermissionConstants.CONTRACT_VIEW);
+        expireExpiredContracts();
         Long currentUserId = securityUtils.getCurrentUserId();
         boolean manager = securityUtils.hasRole(SecurityUtils.ROLE_MANAGER);
 
@@ -121,9 +122,10 @@ public class RentalContractServiceImpl implements RentalContractService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public List<RentalContractResponse> getContractsByRoom(Long roomId) {
         securityUtils.requirePermission(PermissionConstants.CONTRACT_VIEW);
+        expireExpiredContracts();
         Long currentUserId = securityUtils.getCurrentUserId();
         Room room = resolveAccessibleRoom(roomId, currentUserId);
         return contractRepository.findByOwnerIdAndRoomId(room.getOwnerId(), roomId)
@@ -139,9 +141,10 @@ public class RentalContractServiceImpl implements RentalContractService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public ContractSummaryResponse getContractsSummary() {
         securityUtils.requirePermission(PermissionConstants.CONTRACT_VIEW);
+        expireExpiredContracts();
         Long currentUserId = securityUtils.getCurrentUserId();
         boolean manager = securityUtils.hasRole(SecurityUtils.ROLE_MANAGER);
 
@@ -194,16 +197,12 @@ public class RentalContractServiceImpl implements RentalContractService {
         }
 
         Long ownerId = targetRoom.getOwnerId();
-        contractRepository.findByOwnerIdAndContractNo(ownerId, request.getContractNo())
-                .filter(c -> !c.getId().equals(id))
-                .ifPresent(c -> {
-                    throw new DuplicateResourceException(
-                            "Contract number already exists for this owner: " + request.getContractNo());
-                });
-
+        String existingContractNo = existingContract.getContractNo();
         Long prevRoomId = existingContract.getRoomId();
         contractMapper.updateEntityFromDto(request, existingContract);
         existingContract.setOwnerId(ownerId);
+        existingContract.setContractNo(existingContractNo);
+        applyStatusRules(existingContract);
         RentalContract updatedContract = contractRepository.save(existingContract);
         try {
             notificationService.notifyContractExpiring(updatedContract);
@@ -222,9 +221,39 @@ public class RentalContractServiceImpl implements RentalContractService {
         securityUtils.requirePermission(PermissionConstants.CONTRACT_UPDATE);
         RentalContract contract = getAccessibleContract(id);
         contract.setStatus(status);
+        applyStatusRules(contract);
         RentalContract saved = contractRepository.save(contract);
         syncRoomStatus(contract.getRoomId());
         return contractMapper.toResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public int expireExpiredContracts() {
+        LocalDate today = LocalDate.now();
+        List<Long> roomIds = contractRepository.findRoomIdsOfActiveExpiredContracts(
+                RentalContractStatus.ACTIVE, today);
+        if (roomIds.isEmpty()) {
+            return 0;
+        }
+        int updated = contractRepository.expireActiveContractsEndedBefore(
+                RentalContractStatus.ACTIVE, RentalContractStatus.EXPIRED, today);
+        for (Long roomId : roomIds) {
+            syncRoomStatus(roomId);
+        }
+        return updated;
+    }
+
+    @Override
+    @Transactional
+    public void applyRenewal(Long contractId, LocalDate newEndDate) {
+        RentalContract contract = contractRepository.findById(contractId)
+                .orElseThrow(() -> RentalContractNotFoundException.forId(contractId));
+        contract.setEndDate(newEndDate);
+        contract.setStatus(RentalContractStatus.ACTIVE);
+        applyStatusRules(contract);
+        contractRepository.save(contract);
+        syncRoomStatus(contract.getRoomId());
     }
 
     @Override
@@ -248,6 +277,38 @@ public class RentalContractServiceImpl implements RentalContractService {
                 roomRepository.save(room);
             }
         });
+    }
+
+    // Business contract numbers are system-generated on the backend. The existing
+    // CT-MM-dd-<random hex> shape is preserved; the random suffix makes collisions
+    // practically impossible and the (owner_id, contract_no) unique constraint in
+    // the database is the final safety net.
+    private static final DateTimeFormatter CONTRACT_NO_DATE =
+            DateTimeFormatter.ofPattern("MM-dd");
+
+    private String generateUniqueContractNo() {
+        String datePart = LocalDate.now().format(CONTRACT_NO_DATE);
+        while (true) {
+            String candidate = "CT-" + datePart + "-" + randomHex(9);
+            if (!contractRepository.existsByContractNo(candidate)) {
+                return candidate;
+            }
+        }
+    }
+
+    private static String randomHex(int length) {
+        return UUID.randomUUID().toString().replace("-", "")
+                .substring(0, length);
+    }
+
+    // A contract whose end date has passed (end date is inclusive, so "today"
+    // still counts as active) must never remain ACTIVE.
+    private void applyStatusRules(RentalContract contract) {
+        if (contract.getStatus() == RentalContractStatus.ACTIVE
+                && contract.getEndDate() != null
+                && contract.getEndDate().isBefore(LocalDate.now())) {
+            contract.setStatus(RentalContractStatus.EXPIRED);
+        }
     }
 
     private RentalContract getAccessibleContract(Long id) {

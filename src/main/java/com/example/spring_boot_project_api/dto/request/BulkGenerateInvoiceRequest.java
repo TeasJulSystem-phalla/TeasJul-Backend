@@ -22,6 +22,10 @@ public record BulkGenerateInvoiceRequest(
         BigDecimal discount,
 
         // Optional: overrides the due date derived from each contract's dueDay.
-        LocalDate dueDate
+        LocalDate dueDate,
+
+        // Optional: restricts generation to a single accessible house.
+        // When omitted, every house the current user can access is used.
+        Long houseId
 ) {
 }

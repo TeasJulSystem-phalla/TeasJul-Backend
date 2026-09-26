@@ -3,7 +3,10 @@ package com.example.spring_boot_project_api.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -42,11 +45,20 @@ import com.example.spring_boot_project_api.util.SecurityUtils;
 @ExtendWith(MockitoExtension.class)
 class UserServiceImplTest {
 
+    private static final Long OWNER_ID = 1L;
+    private static final Long SUPER_ADMIN_ID = 3L;
+    private static final Long MY_HOUSE_ID = 10L;
+    private static final Long MY_TENANT_USER_ID = 25L;
+    private static final Long OTHER_OWNER_TENANT_USER_ID = 77L;
+
     @Mock
     private UserRepository userRepository;
 
     @Mock
     private SecurityUtils securityUtils;
+
+    @Mock
+    private HouseAccessService houseAccessService;
 
     @Spy
     private UserMapper userMapper = new UserMapper();
@@ -57,6 +69,26 @@ class UserServiceImplTest {
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();
+    }
+
+    /** Authenticates the caller as a plain OWNER owning {@link #MY_HOUSE_ID}. */
+    private void stubOwnerScope() {
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(true);
+        when(securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(false);
+        when(securityUtils.getCurrentUserId()).thenReturn(OWNER_ID);
+        when(houseAccessService.getScopedOwnerIds()).thenReturn(List.of(OWNER_ID));
+        when(houseAccessService.getAccessibleHouseIds()).thenReturn(List.of(MY_HOUSE_ID));
+    }
+
+    private void stubSuperAdmin() {
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(false);
+        when(securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(true);
+    }
+
+    /** No staff role at all: used by the "must be rejected" cases. */
+    private void stubNoStaffRole() {
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(false);
+        when(securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(false);
     }
 
     private User user() {
@@ -118,7 +150,7 @@ class UserServiceImplTest {
     void getAllUsersShouldReturnPagedUsers() {
         Page<User> page = new PageImpl<>(List.of(user()), PageRequest.of(0, 10), 1);
         when(userRepository.findAllWithFilters(eq(null), eq(null), any(Pageable.class))).thenReturn(page);
-        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(true);
+        stubSuperAdmin();
 
         PageResponse<UserResponse> users = userService.getAllUsers(null, null, PageRequest.of(0, 10));
 
@@ -131,7 +163,7 @@ class UserServiceImplTest {
     void getAllUsersCapsPageSize() {
         Page<User> page = new PageImpl<>(List.of(user()), PageRequest.of(0, 10), 1);
         when(userRepository.findAllWithFilters(eq(null), eq(null), any(Pageable.class))).thenReturn(page);
-        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(true);
+        stubSuperAdmin();
 
         userService.getAllUsers(null, null, PageRequest.of(0, 99999));
 
@@ -143,7 +175,7 @@ class UserServiceImplTest {
 
     @Test
     void getAllUsersRequiresOwnerRole() {
-        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(false);
+        stubNoStaffRole();
 
         assertThatThrownBy(() -> userService.getAllUsers(null, null, PageRequest.of(0, 10)))
                 .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
@@ -151,7 +183,7 @@ class UserServiceImplTest {
 
     @Test
     void getUsersSummaryGroupsByStatus() {
-        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(true);
+        stubSuperAdmin();
         when(userRepository.countGroupedByStatus())
                 .thenReturn(List.of(
                         new Object[]{UserStatus.ACTIVE, 3L},
@@ -184,7 +216,7 @@ class UserServiceImplTest {
     void deleteUserShouldRemoveUser() {
         User existing = user();
         when(userRepository.findById(1L)).thenReturn(Optional.of(existing));
-        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(true);
+        stubSuperAdmin();
 
         userService.deleteUser(1L);
 
@@ -214,7 +246,7 @@ class UserServiceImplTest {
     @Test
     void searchAvailableForTenantReturnsPagedProjectsAndTrimsQuery() {
         Page<User> page = new PageImpl<>(List.of(candidate()), PageRequest.of(0, 10), 1);
-
+        stubSuperAdmin();
         when(userRepository.findAvailableForTenant(eq("dara"), any(Pageable.class)))
                 .thenReturn(page);
 
@@ -237,6 +269,7 @@ class UserServiceImplTest {
     @Test
     void searchAvailableForTenantExposesNoSensitiveFields() {
         Page<User> page = new PageImpl<>(List.of(candidate()), PageRequest.of(0, 10), 1);
+        stubSuperAdmin();
         when(userRepository.findAvailableForTenant(eq("dara"), any(Pageable.class))).thenReturn(page);
 
         UserTenantCandidateResponse item =
@@ -252,6 +285,7 @@ class UserServiceImplTest {
         User two = candidate();
         two.setId(26L);
         Page<User> page = new PageImpl<>(List.of(one, two), PageRequest.of(0, 10), 2);
+        stubSuperAdmin();
         when(userRepository.findAvailableForTenant(eq("x"), any(Pageable.class))).thenReturn(page);
 
         PageResponse<UserTenantCandidateResponse> response =
@@ -267,6 +301,7 @@ class UserServiceImplTest {
 
     @Test
     void searchAvailableForTenantEmptyQueryPassedAsNullDoesNotCrash() {
+        stubSuperAdmin();
         when(userRepository.findAvailableForTenant(eq(null), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 10), 0));
 
@@ -275,5 +310,200 @@ class UserServiceImplTest {
 
         assertThat(response.content()).isEmpty();
         assertThat(response.totalElements()).isZero();
+    }
+
+    // ------------------------------------------------------------------
+    // OWNER authorization scope
+    // ------------------------------------------------------------------
+
+    @Test
+    void getAllUsersAsOwnerUsesOwnerScopedQueryAndNeverTheGlobalOne() {
+        Page<User> page = new PageImpl<>(List.of(user()), PageRequest.of(0, 10), 1);
+        stubOwnerScope();
+        when(userRepository.findAllInOwnerScope(eq(null), eq(null), eq(OWNER_ID),
+                anyCollection(), anyCollection(), any(Pageable.class))).thenReturn(page);
+
+        userService.getAllUsers(null, null, PageRequest.of(0, 10));
+
+        verify(userRepository, never()).findAllWithFilters(any(), any(), any(Pageable.class));
+        verify(userRepository).findAllInOwnerScope(eq(null), eq(null), eq(OWNER_ID),
+                eq(List.of(OWNER_ID)), eq(List.of(MY_HOUSE_ID)), any(Pageable.class));
+    }
+
+    @Test
+    void getAllUsersAsSuperAdminStaysUnrestricted() {
+        Page<User> page = new PageImpl<>(List.of(user()), PageRequest.of(0, 10), 1);
+        stubSuperAdmin();
+        when(userRepository.findAllWithFilters(any(), any(), any(Pageable.class))).thenReturn(page);
+
+        userService.getAllUsers(null, null, PageRequest.of(0, 10));
+
+        verify(userRepository).findAllWithFilters(any(), any(), any(Pageable.class));
+        verify(userRepository, never()).findAllInOwnerScope(any(), any(), anyLong(),
+                anyCollection(), anyCollection(), any(Pageable.class));
+    }
+
+    @Test
+    void getUsersSummaryAsOwnerUsesScopedCount() {
+        stubOwnerScope();
+        when(userRepository.countGroupedByStatusInOwnerScope(eq(OWNER_ID), anyCollection(), anyCollection()))
+                .thenReturn(List.<Object[]>of(new Object[]{UserStatus.ACTIVE, 2L}));
+
+        UserSummaryResponse summary = userService.getUsersSummary();
+
+        assertThat(summary.total()).isEqualTo(2L);
+        verify(userRepository, never()).countGroupedByStatus();
+    }
+
+    @Test
+    void ownerCanViewSelfWithoutScopeLookup() {
+        when(securityUtils.getCurrentUserId()).thenReturn(OWNER_ID);
+        when(userRepository.findById(OWNER_ID)).thenReturn(Optional.of(user()));
+
+        assertThat(userService.getUserById(OWNER_ID).id()).isEqualTo(OWNER_ID);
+        verify(userRepository, never()).existsInOwnerScope(anyLong(), anyLong(),
+                anyCollection(), anyCollection());
+    }
+
+    @Test
+    void ownerCanViewOwnTenantUser() {
+        stubOwnerScope();
+        when(userRepository.existsInOwnerScope(eq(MY_TENANT_USER_ID), eq(OWNER_ID),
+                anyCollection(), anyCollection())).thenReturn(true);
+        User tenantUser = user();
+        tenantUser.setId(MY_TENANT_USER_ID);
+        when(userRepository.findById(MY_TENANT_USER_ID)).thenReturn(Optional.of(tenantUser));
+
+        assertThat(userService.getUserById(MY_TENANT_USER_ID).id()).isEqualTo(MY_TENANT_USER_ID);
+    }
+
+    @Test
+    void ownerCannotViewAnotherOwnersTenantUser() {
+        stubOwnerScope();
+        when(userRepository.existsInOwnerScope(eq(OTHER_OWNER_TENANT_USER_ID), eq(OWNER_ID),
+                anyCollection(), anyCollection())).thenReturn(false);
+
+        assertThatThrownBy(() -> userService.getUserById(OTHER_OWNER_TENANT_USER_ID))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        verify(userRepository, never()).findById(OTHER_OWNER_TENANT_USER_ID);
+    }
+
+    @Test
+    void ownerCannotViewSuperAdminUser() {
+        stubOwnerScope();
+        when(userRepository.existsInOwnerScope(eq(SUPER_ADMIN_ID), eq(OWNER_ID),
+                anyCollection(), anyCollection())).thenReturn(false);
+
+        assertThatThrownBy(() -> userService.getUserById(SUPER_ADMIN_ID))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        verify(userRepository, never()).findById(SUPER_ADMIN_ID);
+    }
+
+    @Test
+    void ownerCannotUpdateAnotherOwnersTenantUser() {
+        stubOwnerScope();
+        when(userRepository.existsInOwnerScope(eq(OTHER_OWNER_TENANT_USER_ID), eq(OWNER_ID),
+                anyCollection(), anyCollection())).thenReturn(false);
+
+        UpdateUserRequest request = new UpdateUserRequest("Hacked", null, null, null);
+
+        assertThatThrownBy(() -> userService.updateUser(OTHER_OWNER_TENANT_USER_ID, request))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    void ownerCannotDeleteAnotherOwnersTenantUser() {
+        stubOwnerScope();
+        when(userRepository.existsInOwnerScope(eq(OTHER_OWNER_TENANT_USER_ID), eq(OWNER_ID),
+                anyCollection(), anyCollection())).thenReturn(false);
+
+        assertThatThrownBy(() -> userService.deleteUser(OTHER_OWNER_TENANT_USER_ID))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        verify(userRepository, never()).delete(any(User.class));
+    }
+
+    @Test
+    void ownerCannotDeleteSuperAdminUser() {
+        stubOwnerScope();
+        when(userRepository.existsInOwnerScope(eq(SUPER_ADMIN_ID), eq(OWNER_ID),
+                anyCollection(), anyCollection())).thenReturn(false);
+
+        assertThatThrownBy(() -> userService.deleteUser(SUPER_ADMIN_ID))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        verify(userRepository, never()).delete(any(User.class));
+    }
+
+    @Test
+    void ownerCanDeleteOwnTenantUser() {
+        stubOwnerScope();
+        when(userRepository.existsInOwnerScope(eq(MY_TENANT_USER_ID), eq(OWNER_ID),
+                anyCollection(), anyCollection())).thenReturn(true);
+        User tenantUser = user();
+        tenantUser.setId(MY_TENANT_USER_ID);
+        when(userRepository.findById(MY_TENANT_USER_ID)).thenReturn(Optional.of(tenantUser));
+
+        userService.deleteUser(MY_TENANT_USER_ID);
+
+        verify(userRepository).delete(tenantUser);
+    }
+
+    @Test
+    void requireUserManagementAccessAsSuperAdminIsUnrestricted() {
+        stubSuperAdmin();
+
+        userService.requireUserManagementAccess(OTHER_OWNER_TENANT_USER_ID);
+
+        verify(userRepository, never()).existsInOwnerScope(anyLong(), anyLong(),
+                anyCollection(), anyCollection());
+    }
+
+    @Test
+    void requireUserManagementAccessRejectsNonStaffCaller() {
+        stubNoStaffRole();
+
+        assertThatThrownBy(() -> userService.requireUserManagementAccess(MY_TENANT_USER_ID))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+    }
+
+    @Test
+    void searchAvailableForTenantAsOwnerUsesScopedQuery() {
+        stubOwnerScope();
+        when(securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)).thenReturn(false);
+        when(userRepository.findAvailableForTenantInOwnerScope(eq("dara"), eq(OWNER_ID),
+                anyCollection(), anyCollection(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 10), 0));
+
+        userService.searchAvailableForTenant("dara", PageRequest.of(0, 10));
+
+        verify(userRepository, never()).findAvailableForTenant(any(), any(Pageable.class));
+        verify(userRepository).findAvailableForTenantInOwnerScope(eq("dara"), eq(OWNER_ID),
+                eq(List.of(OWNER_ID)), eq(List.of(MY_HOUSE_ID)), any(Pageable.class));
+    }
+
+    @Test
+    void searchAvailableForTenantRejectsTenantRole() {
+        stubNoStaffRole();
+        when(securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)).thenReturn(false);
+
+        assertThatThrownBy(() -> userService.searchAvailableForTenant("dara", PageRequest.of(0, 10)))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        verify(userRepository, never()).findAvailableForTenant(any(), any(Pageable.class));
+        verify(userRepository, never()).findAvailableForTenantInOwnerScope(any(), anyLong(),
+                anyCollection(), anyCollection(), any(Pageable.class));
+    }
+
+    @Test
+    void searchAvailableForTenantKeepsManagerCandidatePoolUnrestricted() {
+        stubNoStaffRole();
+        when(securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)).thenReturn(true);
+        when(userRepository.findAvailableForTenant(eq("dara"), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 10), 0));
+
+        userService.searchAvailableForTenant("dara", PageRequest.of(0, 10));
+
+        verify(userRepository).findAvailableForTenant(eq("dara"), any(Pageable.class));
+        verify(userRepository, never()).findAvailableForTenantInOwnerScope(any(), anyLong(),
+                anyCollection(), anyCollection(), any(Pageable.class));
     }
 }

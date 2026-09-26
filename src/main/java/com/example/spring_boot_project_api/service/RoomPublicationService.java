@@ -4,6 +4,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 import com.example.spring_boot_project_api.enums.RoomPublicationStatus;
+import com.example.spring_boot_project_api.enums.RoomStatus;
 import com.example.spring_boot_project_api.model.Room;
 
 /**
@@ -53,8 +54,13 @@ public interface RoomPublicationService {
     /**
      * SUPER_ADMIN-only paged listing of rooms for the review workflow.
      *
-     * @param publicationStatus optional status filter; when {@code null} every
-     *        room is returned regardless of its publication status
+     * @param publicationStatus optional publication status filter; when
+     *        {@code null} every room is returned regardless of publication status
+     * @param roomStatus optional room availability filter; when {@code null}
+     *        rooms of every availability status are returned. The two statuses
+     *        are independent: {@code PUBLISHED + OCCUPIED} is valid and does
+     *        not imply the listing should be unpublished.
      */
-    Page<Room> getRoomsForReview(RoomPublicationStatus publicationStatus, Pageable pageable);
+    Page<Room> getRoomsForReview(RoomPublicationStatus publicationStatus,
+            RoomStatus roomStatus, Pageable pageable);
 }

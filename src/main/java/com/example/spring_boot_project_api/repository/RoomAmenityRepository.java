@@ -24,6 +24,8 @@ public interface RoomAmenityRepository extends JpaRepository<RoomAmenity, RoomAm
 
     Optional<RoomAmenity> findByIdRoomIdAndIdAmenityId(Long roomId, Long amenityId);
 
+    List<RoomAmenity> findByIdRoomIdIn(java.util.Collection<Long> roomIds);
+
     void deleteByIdRoomIdAndIdAmenityId(Long roomId, Long amenityId);
 
     /** Bulk deletes every amenity assignment of the given room immediately (used before re-inserting). */

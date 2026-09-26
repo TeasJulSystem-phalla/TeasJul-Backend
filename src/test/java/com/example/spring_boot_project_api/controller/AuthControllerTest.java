@@ -1,29 +1,45 @@
 package com.example.spring_boot_project_api.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.time.LocalDateTime;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.mockito.ArgumentCaptor;
 
 import com.example.spring_boot_project_api.config.JwtAuthenticationFilter;
 import com.example.spring_boot_project_api.config.SecurityConfig;
+import com.example.spring_boot_project_api.dto.response.LoginHistoryResponse;
 import com.example.spring_boot_project_api.dto.response.LoginResponse;
+import com.example.spring_boot_project_api.dto.response.PageResponse;
 import com.example.spring_boot_project_api.dto.response.UserResponse;
+import com.example.spring_boot_project_api.enums.LoginMethod;
+import com.example.spring_boot_project_api.enums.LoginOutcome;
 import com.example.spring_boot_project_api.exception.DuplicateResourceException;
 import com.example.spring_boot_project_api.model.UserStatus;
 import com.example.spring_boot_project_api.service.AuthService;
+import com.example.spring_boot_project_api.service.LoginHistoryService;
 import com.example.spring_boot_project_api.service.SecurityService;
 import com.example.spring_boot_project_api.util.JwtUtil;
 
@@ -43,6 +59,9 @@ class AuthControllerTest {
 
     @MockitoBean
     private SecurityService securityService;
+
+    @MockitoBean
+    private LoginHistoryService loginHistoryService;
 
     @MockitoBean
     private UserDetailsService userDetailsService;
@@ -169,5 +188,54 @@ class AuthControllerTest {
                                 """))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("Invalid username or password"));
+    }
+
+    private PageResponse<LoginHistoryResponse> historyPage() {
+        return PageResponse.of(List.of(
+                new LoginHistoryResponse(2L, LocalDateTime.of(2026, 9, 25, 22, 30),
+                        LoginOutcome.SUCCESS, LoginMethod.PASSWORD, "192.168.1.10",
+                        "Mozilla/5.0 Chrome/140.0"),
+                new LoginHistoryResponse(1L, LocalDateTime.of(2026, 9, 25, 22, 25),
+                        LoginOutcome.FAILED, LoginMethod.PASSWORD, "192.168.1.11",
+                        "Mozilla/5.0 Firefox/141.0")),
+                0, 10, 2, 1);
+    }
+
+    @Test
+    @WithMockUser
+    void loginHistoryShouldReturnTheCallersOwnRecords() throws Exception {
+        when(loginHistoryService.getMyHistory(any())).thenReturn(historyPage());
+
+        mockMvc.perform(get("/api/v1/auth/login-history"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(2))
+                .andExpect(jsonPath("$.content[0].outcome").value("SUCCESS"))
+                .andExpect(jsonPath("$.content[0].method").value("PASSWORD"))
+                .andExpect(jsonPath("$.content[0].ip").value("192.168.1.10"))
+                .andExpect(jsonPath("$.content[0].userAgent").value("Mozilla/5.0 Chrome/140.0"))
+                .andExpect(jsonPath("$.content[1].outcome").value("FAILED"))
+                .andExpect(jsonPath("$.content[1].method").value("PASSWORD"));
+    }
+
+    @Test
+    @WithMockUser
+    void loginHistoryShouldHonourPageAndSize() throws Exception {
+        when(loginHistoryService.getMyHistory(any())).thenReturn(historyPage());
+
+        mockMvc.perform(get("/api/v1/auth/login-history").param("page", "1").param("size", "5"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+        verify(loginHistoryService).getMyHistory(captor.capture());
+        assertThat(captor.getValue().getPageNumber()).isEqualTo(1);
+        assertThat(captor.getValue().getPageSize()).isEqualTo(5);
+        assertThat(captor.getValue().getSort().getOrderFor("occurredAt").getDirection())
+                .isEqualTo(Sort.Direction.DESC);
+    }
+
+    @Test
+    void loginHistoryShouldRequireAuthentication() throws Exception {
+        mockMvc.perform(get("/api/v1/auth/login-history"))
+                .andExpect(status().isUnauthorized());
     }
 }

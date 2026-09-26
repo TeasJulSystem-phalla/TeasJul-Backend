@@ -56,6 +56,14 @@ public class SecurityUtils {
         return userRoleRepository.existsByUserIdAndRoleCode(getCurrentUserId(), roleCode);
     }
 
+    /**
+     * Whether the current user holds the OWNER role but is not a SUPER_ADMIN.
+     * Such a user is restricted from accessing or managing the SUPER_ADMIN role.
+     */
+    public boolean isOwnerWithoutSuperAdmin() {
+        return hasRole(ROLE_OWNER) && !hasRole(ROLE_SUPER_ADMIN);
+    }
+
     /** Whether the given user has the given role code. */
     public boolean hasRole(Long userId, String roleCode) {
         return userRoleRepository.existsByUserIdAndRoleCode(userId, roleCode);

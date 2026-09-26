@@ -58,6 +58,13 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long>, JpaSpec
 
     boolean existsByContractIdAndBillingYearAndBillingMonth(Long contractId, Integer billingYear, Integer billingMonth);
 
+    @Query("SELECT DISTINCT i.contractId FROM Invoice i " +
+            "WHERE i.contractId IN :contractIds " +
+            "AND i.billingYear = :year AND i.billingMonth = :month")
+    List<Long> findInvoicedContractIds(@Param("contractIds") Collection<Long> contractIds,
+            @Param("year") int year,
+            @Param("month") int month);
+
     Optional<Invoice> findByContractIdAndBillingYearAndBillingMonth(Long contractId, Integer billingYear, Integer billingMonth);
 
     // The rate effective for the given date: the latest ACTIVE rate whose

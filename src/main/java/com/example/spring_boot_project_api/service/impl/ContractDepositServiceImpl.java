@@ -1,5 +1,6 @@
 package com.example.spring_boot_project_api.service.impl;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -36,11 +37,40 @@ public class ContractDepositServiceImpl implements ContractDepositService {
     public ContractDepositResponse createDeposit(CreateDepositRequest request) {
         RentalContract contract = getOwnedContract(request.contractId());
 
+        ContractDepositStatus requestedStatus = request.status() != null
+                ? request.status()
+                : ContractDepositStatus.PENDING;
+
+        BigDecimal amount = request.amount();
+        BigDecimal paidAmount = BigDecimal.ZERO;
+        LocalDateTime paidAt = null;
+        LocalDateTime refundedAt = null;
+
+        switch (requestedStatus) {
+            case PAID -> {
+                // "Already paid": the full deposit was collected at contract creation.
+                paidAmount = amount;
+                paidAt = request.paidAt() != null ? request.paidAt().atStartOfDay() : LocalDateTime.now();
+            }
+            case PARTIALLY_REFUNDED, REFUNDED -> {
+                // A refunded deposit was first collected in full.
+                paidAmount = amount;
+                paidAt = request.paidAt() != null ? request.paidAt().atStartOfDay() : LocalDateTime.now();
+                refundedAt = LocalDateTime.now();
+            }
+            case PENDING -> {
+                // Not yet paid: paidAmount / paidAt / refundedAt stay at their defaults.
+            }
+        }
+
         ContractDeposit deposit = ContractDeposit.builder()
                 .rentalContract(contract)
-                .amount(request.amount())
+                .amount(amount)
+                .paidAmount(paidAmount)
+                .status(requestedStatus)
+                .paidAt(paidAt)
+                .refundedAt(refundedAt)
                 .notes(request.notes())
-                .status(ContractDepositStatus.PENDING)
                 .build();
 
         ContractDeposit saved = depositRepository.save(deposit);
@@ -90,12 +120,17 @@ public class ContractDepositServiceImpl implements ContractDepositService {
     }
 
     private ContractDepositResponse mapToResponse(ContractDeposit deposit) {
+        // Defensive normalization for legacy rows: never expose a null paid amount,
+        // and never treat an unknown financial record as paid.
+        BigDecimal paidAmount = deposit.getPaidAmount() != null ? deposit.getPaidAmount() : BigDecimal.ZERO;
+        ContractDepositStatus status = deposit.getStatus() != null ? deposit.getStatus() : ContractDepositStatus.PENDING;
+
         return new ContractDepositResponse(
                 deposit.getId(),
                 deposit.getRentalContract().getId(),
                 deposit.getAmount(),
-                deposit.getPaidAmount(),
-                deposit.getStatus(),
+                paidAmount,
+                status,
                 deposit.getPaidAt(),
                 deposit.getRefundedAt(),
                 deposit.getNotes(),

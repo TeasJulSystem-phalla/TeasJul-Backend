@@ -21,6 +21,7 @@ import com.example.spring_boot_project_api.repository.RoleRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.repository.UserRoleRepository;
 import com.example.spring_boot_project_api.service.UserRoleService;
+import com.example.spring_boot_project_api.service.UserService;
 import com.example.spring_boot_project_api.util.EmailValidator;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
@@ -35,6 +36,7 @@ public class UserRoleServiceImpl implements UserRoleService {
     private final RoleRepository roleRepository;
     private final RoleMapper roleMapper;
     private final SecurityUtils securityUtils;
+    private final UserService userService;
 
     @Override
     @Transactional(readOnly = true)
@@ -45,8 +47,11 @@ public class UserRoleServiceImpl implements UserRoleService {
         }
         getUserOrThrow(userId);
 
+        boolean restrictSuperAdmin = securityUtils.isOwnerWithoutSuperAdmin();
         return userRoleRepository.findByUserId(userId).stream()
-                .map(assignment -> roleMapper.toResponse(assignment.getRole()))
+                .map(assignment -> assignment.getRole())
+                .filter(role -> !(restrictSuperAdmin && isSuperAdminRole(role.getCode())))
+                .map(roleMapper::toResponse)
                 .toList();
     }
 
@@ -64,6 +69,12 @@ public class UserRoleServiceImpl implements UserRoleService {
         requireOwner();
         User user = getUserOrThrow(userId);
         Role role = getRoleOrThrow(roleId);
+        ensureOwnerMayManage(role);
+        ensureOwnerMayNotMintOwners(role);
+        // The target user must be inside the caller's ownership scope. This blocks
+        // an OWNER from touching unrelated users and from modifying another OWNER
+        // or a SUPER_ADMIN, which a role check alone cannot express.
+        userService.requireUserManagementAccess(userId);
 
         if (EmailValidator.isInternalRole(role.getCode())
                 && !EmailValidator.isOnInternalDomain(user.getEmail())) {
@@ -90,6 +101,12 @@ public class UserRoleServiceImpl implements UserRoleService {
     public void removeRoleFromUser(Long userId, Long roleId) {
         requireOwner();
         getUserOrThrow(userId);
+        Role role = getRoleOrThrow(roleId);
+        ensureOwnerMayManage(role);
+        ensureOwnerMayNotMintOwners(role);
+        // Same ownership scope check as assignment: an OWNER may not edit the roles
+        // of a user outside their scope, nor of another OWNER or a SUPER_ADMIN.
+        userService.requireUserManagementAccess(userId);
 
         if (!userRoleRepository.existsByUserIdAndRoleId(userId, roleId)) {
             throw UserRoleNotFoundException.forIds(userId, roleId);
@@ -103,6 +120,36 @@ public class UserRoleServiceImpl implements UserRoleService {
                 && !securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)) {
             throw new AccessDeniedException("You do not have permission to access this resource");
         }
+    }
+
+    /**
+     * An OWNER (who is not also a SUPER_ADMIN) must never assign or remove the
+     * SUPER_ADMIN role on a user. SUPER_ADMIN users keep full access.
+     */
+    private void ensureOwnerMayManage(Role role) {
+        if (securityUtils.isOwnerWithoutSuperAdmin() && isSuperAdminRole(role.getCode())) {
+            throw new AccessDeniedException("You do not have permission to access this resource");
+        }
+    }
+
+    /**
+     * An OWNER (who is not also a SUPER_ADMIN) must never grant or revoke the
+     * OWNER role. Without this, an OWNER could promote a user inside their own
+     * scope into a peer OWNER, which is an escalation out of the caller's own
+     * properties. Managers and tenants remain assignable.
+     */
+    private void ensureOwnerMayNotMintOwners(Role role) {
+        if (securityUtils.isOwnerWithoutSuperAdmin() && isOwnerRole(role.getCode())) {
+            throw new AccessDeniedException("You do not have permission to access this resource");
+        }
+    }
+
+    private boolean isSuperAdminRole(String code) {
+        return SecurityUtils.ROLE_SUPER_ADMIN.equalsIgnoreCase(code);
+    }
+
+    private boolean isOwnerRole(String code) {
+        return SecurityUtils.ROLE_OWNER.equalsIgnoreCase(code);
     }
 
     private User getUserOrThrow(Long userId) {

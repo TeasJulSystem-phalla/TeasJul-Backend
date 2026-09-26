@@ -2,13 +2,17 @@ package com.example.spring_boot_project_api.service.impl;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 
 import org.springframework.data.domain.Page;
@@ -41,6 +45,7 @@ import com.example.spring_boot_project_api.mapper.TenantDashboardMapper;
 import com.example.spring_boot_project_api.model.ContractTenant;
 import com.example.spring_boot_project_api.model.House;
 import com.example.spring_boot_project_api.model.Invoice;
+import com.example.spring_boot_project_api.model.Payment;
 import com.example.spring_boot_project_api.model.RentalContract;
 import com.example.spring_boot_project_api.model.Room;
 import com.example.spring_boot_project_api.model.Tenant;
@@ -260,21 +265,36 @@ public class TenantDashboardServiceImpl implements TenantDashboardService {
             return List.of();
         }
 
-        List<Invoice> invoices = invoiceRepository.findByContractIdIn(contractIds).stream()
-                .filter(invoice -> withinRange(
-                        YearMonth.of(invoice.getBillingYear(), invoice.getBillingMonth()), start, end))
-                .toList();
+        List<Invoice> invoices = invoiceRepository.findByContractIdIn(contractIds);
         if (invoices.isEmpty()) {
             return List.of();
         }
 
-        Map<Long, BigDecimal> paidByInvoice = paidTotalsByInvoice(
-                invoices.stream().map(Invoice::getId).toList());
+        List<Long> invoiceIds = invoices.stream().map(Invoice::getId).toList();
+        List<Payment> payments = paymentRepository.findByInvoiceIdInAndStatus(invoiceIds, PaymentStatus.PAID);
+        Map<Long, BigDecimal> paidByInvoice = new HashMap<>();
+        Map<Long, Set<YearMonth>> paidMonthsByInvoice = new HashMap<>();
+        for (Payment payment : payments) {
+            paidByInvoice.merge(payment.getInvoiceId(), payment.getAmount(), BigDecimal::add);
+            YearMonth paidMonth = paymentMonth(payment);
+            if (paidMonth != null) {
+                paidMonthsByInvoice
+                        .computeIfAbsent(payment.getInvoiceId(), key -> new HashSet<>())
+                        .add(paidMonth);
+            }
+        }
 
         Map<YearMonth, MonthAggregate> byMonth = new TreeMap<>();
         for (Invoice invoice : invoices) {
-            YearMonth month = YearMonth.of(invoice.getBillingYear(), invoice.getBillingMonth());
-            MonthAggregate aggregate = byMonth.computeIfAbsent(month, key -> new MonthAggregate());
+            YearMonth billingMonth = YearMonth.of(invoice.getBillingYear(), invoice.getBillingMonth());
+            boolean billedInRange = withinRange(billingMonth, start, end);
+            boolean paidInRange = paidMonthsByInvoice.getOrDefault(invoice.getId(), Set.of())
+                    .stream()
+                    .anyMatch(month -> withinRange(month, start, end));
+            if (!billedInRange && !paidInRange) {
+                continue;
+            }
+            MonthAggregate aggregate = byMonth.computeIfAbsent(billingMonth, key -> new MonthAggregate());
             aggregate.due = aggregate.due
                     .add(invoice.getTotalAmount().subtract(invoice.getDiscount()));
             aggregate.paid = aggregate.paid
@@ -473,6 +493,11 @@ public class TenantDashboardServiceImpl implements TenantDashboardService {
         return !month.isBefore(start) && !month.isAfter(end);
     }
 
+    private static YearMonth paymentMonth(Payment payment) {
+        LocalDateTime instant = payment.getPaidAt() != null ? payment.getPaidAt() : payment.getCreatedAt();
+        return instant != null ? YearMonth.from(instant.toLocalDate()) : null;
+    }
+
     private static String monthLabel(YearMonth month) {
         return String.format("%04d-%02d", month.getYear(), month.getMonthValue());
     }
@@ -492,8 +517,22 @@ public class TenantDashboardServiceImpl implements TenantDashboardService {
         return switch (code) {
             case "WATER", "WTR" -> UtilityBucket.WATER;
             case "ELECTRICITY", "ELECTRIC", "ELECTRICITY_USAGE", "ELEC" -> UtilityBucket.ELECTRICITY;
-            default -> null;
+            default -> bucketByUnit(type.getUnit());
         };
+    }
+
+    private static UtilityBucket bucketByUnit(String unit) {
+        if (unit == null) {
+            return null;
+        }
+        String normalized = unit.toLowerCase(Locale.ROOT);
+        if (normalized.contains("kwh")) {
+            return UtilityBucket.ELECTRICITY;
+        }
+        if (normalized.contains("m3") || normalized.contains("m\u00B3") || normalized.contains("cubic")) {
+            return UtilityBucket.WATER;
+        }
+        return null;
     }
 
     private static InvoiceItemType itemTypeOf(UtilityType type) {
@@ -501,13 +540,24 @@ public class TenantDashboardServiceImpl implements TenantDashboardService {
             return null;
         }
         String code = type.getCode() != null ? type.getCode().toUpperCase() : "";
-        return switch (code) {
+        InvoiceItemType byCode = switch (code) {
             case "ELECTRICITY", "ELECTRIC", "ELECTRICITY_USAGE", "ELEC" -> InvoiceItemType.ELECTRICITY;
             case "WATER", "WTR" -> InvoiceItemType.WATER;
             case "INTERNET" -> InvoiceItemType.INTERNET;
             case "PARKING" -> InvoiceItemType.PARKING;
             default -> null;
         };
+        if (byCode != null) {
+            return byCode;
+        }
+        UtilityBucket bucket = bucketByUnit(type.getUnit());
+        if (bucket == UtilityBucket.WATER) {
+            return InvoiceItemType.WATER;
+        }
+        if (bucket == UtilityBucket.ELECTRICITY) {
+            return InvoiceItemType.ELECTRICITY;
+        }
+        return null;
     }
 
     private enum UtilityBucket {

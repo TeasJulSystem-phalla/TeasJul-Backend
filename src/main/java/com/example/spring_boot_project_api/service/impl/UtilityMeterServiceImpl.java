@@ -76,7 +76,8 @@ public class UtilityMeterServiceImpl implements UtilityMeterService {
 
         assertNoActiveMeterForRoomType(request.roomId(), request.utilityTypeId(), null);
 
-        if (meterRepository.existsByMeterNumber(request.meterNumber())) {
+        if (meterRepository.existsByOwnerIdAndUtilityTypeIdAndMeterNumber(
+                owner.getId(), request.utilityTypeId(), request.meterNumber())) {
             throw new DuplicateResourceException(
                     "Meter number already exists: " + request.meterNumber());
         }
@@ -142,7 +143,8 @@ public class UtilityMeterServiceImpl implements UtilityMeterService {
 
         String effectiveMeterNumber = request.meterNumber() != null
                 ? request.meterNumber() : meter.getMeterNumber();
-        if (meterRepository.existsByMeterNumberAndIdNot(effectiveMeterNumber, meter.getId())) {
+        if (meterRepository.existsByOwnerIdAndUtilityTypeIdAndMeterNumberAndIdNot(
+                meter.getOwner().getId(), effectiveUtilityTypeId, effectiveMeterNumber, meter.getId())) {
             throw new DuplicateResourceException("Meter number already exists: " + effectiveMeterNumber);
         }
 

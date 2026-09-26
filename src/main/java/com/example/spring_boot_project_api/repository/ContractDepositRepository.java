@@ -26,6 +26,14 @@ public interface ContractDepositRepository extends JpaRepository<ContractDeposit
         FROM ContractDeposit d, RentalContract rc, Room r
         WHERE d.rentalContract = rc AND rc.roomId = r.id AND r.houseId IN :houseIds
           AND d.status = com.example.spring_boot_project_api.enums.ContractDepositStatus.PAID
+    """)
+    BigDecimal sumPaidAmountByHouseIds(@Param("houseIds") Collection<Long> houseIds);
+
+    @Query("""
+        SELECT COALESCE(SUM(d.paidAmount), 0)
+        FROM ContractDeposit d, RentalContract rc, Room r
+        WHERE d.rentalContract = rc AND rc.roomId = r.id AND r.houseId IN :houseIds
+          AND d.status = com.example.spring_boot_project_api.enums.ContractDepositStatus.PAID
           AND d.paidAt >= :from AND d.paidAt < :to
     """)
     BigDecimal sumPaidAmountByHouseIdsAndPaidAtRange(@Param("from") LocalDateTime from,

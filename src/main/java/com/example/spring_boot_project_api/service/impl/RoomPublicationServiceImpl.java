@@ -161,13 +161,10 @@ public class RoomPublicationServiceImpl implements RoomPublicationService {
     @Override
     @Transactional(readOnly = true)
     public Page<Room> getRoomsForReview(RoomPublicationStatus publicationStatus,
-            Pageable pageable) {
+            RoomStatus roomStatus, Pageable pageable) {
         requireSuperAdmin();
-        if (publicationStatus == null) {
-            return roomRepository.findAll(sortedBySubmittedAtAsc(pageable));
-        }
-        return roomRepository.findByPublicationStatus(
-                publicationStatus, sortedBySubmittedAtAsc(pageable));
+        return roomRepository.findRoomsForReview(
+                publicationStatus, roomStatus, sortedBySubmittedAtAsc(pageable));
     }
 
     private void requireSuperAdmin() {

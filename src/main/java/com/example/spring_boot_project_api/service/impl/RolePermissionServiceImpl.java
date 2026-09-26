@@ -43,7 +43,8 @@ public class RolePermissionServiceImpl implements RolePermissionService {
     @Override
     @Transactional(readOnly = true)
     public List<PermissionResponse> getRolePermissions(Long roleId) {
-        getRoleOrThrow(roleId);
+        Role role = getRoleOrThrow(roleId);
+        ensureOwnerMayManage(role);
 
         return rolePermissionRepository.findByRoleId(roleId).stream()
                 .map(assignment -> permissionMapper.toResponse(assignment.getPermission()))
@@ -55,6 +56,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
     public PermissionResponse assignPermissionToRole(Long roleId, Long permissionId) {
         requireOwner();
         Role role = getRoleOrThrow(roleId);
+        ensureOwnerMayManage(role);
         Permission permission = getPermissionOrThrow(permissionId);
 
         if (rolePermissionRepository.existsByRoleIdAndPermissionId(roleId, permissionId)) {
@@ -77,6 +79,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
     public void removePermissionFromRole(Long roleId, Long permissionId) {
         requireOwner();
         Role role = getRoleOrThrow(roleId);
+        ensureOwnerMayManage(role);
         ensureNotOwnerRole(role);
 
         if (!rolePermissionRepository.existsByRoleIdAndPermissionId(roleId, permissionId)) {
@@ -92,6 +95,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
             ReplaceRolePermissionsRequest request) {
         requireOwner();
         Role role = getRoleOrThrow(roleId);
+        ensureOwnerMayManage(role);
         ensureNotOwnerRole(role);
 
         Set<Long> permissionIds = new LinkedHashSet<>(request.permissionIds());
@@ -138,6 +142,17 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         if (SecurityUtils.ROLE_OWNER.equalsIgnoreCase(role.getCode())) {
             throw new AccessDeniedException(
                     "The Owner role always retains all permissions and cannot be modified");
+        }
+    }
+
+    /**
+     * An OWNER (who is not also a SUPER_ADMIN) must never read or manage the
+     * SUPER_ADMIN role's permissions. SUPER_ADMIN users keep full access.
+     */
+    private void ensureOwnerMayManage(Role role) {
+        if (securityUtils.isOwnerWithoutSuperAdmin()
+                && SecurityUtils.ROLE_SUPER_ADMIN.equalsIgnoreCase(role.getCode())) {
+            throw new AccessDeniedException("You do not have permission to access this resource");
         }
     }
 

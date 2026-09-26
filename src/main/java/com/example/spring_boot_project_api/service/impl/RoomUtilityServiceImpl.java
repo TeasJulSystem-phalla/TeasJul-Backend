@@ -1,13 +1,21 @@
 package com.example.spring_boot_project_api.service.impl;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.example.spring_boot_project_api.dto.request.BulkRoomUtilityRequest;
+import com.example.spring_boot_project_api.dto.response.BulkAssignmentResponse;
 import com.example.spring_boot_project_api.dto.response.RoomUtilityResponse;
 import com.example.spring_boot_project_api.enums.UtilityTypeStatus;
 import com.example.spring_boot_project_api.exception.DuplicateResourceException;
@@ -19,6 +27,7 @@ import com.example.spring_boot_project_api.mapper.RoomUtilityMapper;
 import com.example.spring_boot_project_api.model.House;
 import com.example.spring_boot_project_api.model.Room;
 import com.example.spring_boot_project_api.model.RoomUtility;
+import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.model.UtilityType;
 import com.example.spring_boot_project_api.repository.HouseRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
@@ -103,6 +112,112 @@ public class RoomUtilityServiceImpl implements RoomUtilityService {
 
         RoomUtility saved = roomUtilityRepository.save(ru);
         return mapper.toResponse(saved, type, room.getRoomNumber());
+    }
+
+    @Override
+    @Transactional
+    public BulkAssignmentResponse bulkAssignUtilities(BulkRoomUtilityRequest request) {
+        securityUtils.requirePermission(PermissionConstants.UTILITY_MANAGE);
+        if (request == null) {
+            throw new IllegalArgumentException("Request body is required");
+        }
+        List<Long> roomIds = distinctIds(request.roomIds());
+        List<Long> utilityTypeIds = distinctIds(request.utilityTypeIds());
+        if (roomIds.isEmpty() || utilityTypeIds.isEmpty()) {
+            throw new IllegalArgumentException("At least one room and one utility type are required");
+        }
+
+        List<BulkAssignmentResponse.Failure> failures = new ArrayList<>();
+        Map<Long, Room> roomsById = roomRepository.findAllById(roomIds).stream()
+                .collect(Collectors.toMap(Room::getId, Function.identity()));
+        for (Long roomId : roomIds) {
+            if (!roomsById.containsKey(roomId)) {
+                for (Long typeId : utilityTypeIds) {
+                    failures.add(BulkAssignmentResponse.Failure.of(roomId, typeId, "Room not found"));
+                }
+            }
+        }
+
+        Map<Long, Map<Long, RoomUtility>> byRoomByType = new HashMap<>();
+        for (RoomUtility ru : roomUtilityRepository.findByRoomIdIn(roomIds)) {
+            byRoomByType.computeIfAbsent(ru.getRoomId(), k -> new HashMap<>())
+                    .put(ru.getUtilityTypeId(), ru);
+        }
+
+        Map<Long, Long> ownerByRoom = new HashMap<>();
+        for (Room room : roomsById.values()) {
+            Long ownerId;
+            try {
+                ownerId = resolveOwnerId(room);
+            } catch (HouseNotFoundException e) {
+                for (Long typeId : utilityTypeIds) {
+                    failures.add(BulkAssignmentResponse.Failure.of(room.getId(), typeId, "House not found"));
+                }
+                continue;
+            }
+            ownerByRoom.put(room.getId(), ownerId);
+        }
+
+        Map<Long, User> ownerCache = new HashMap<>();
+        int created = 0;
+        int alreadyAssigned = 0;
+        for (Long roomId : roomIds) {
+            Room room = roomsById.get(roomId);
+            if (room == null) {
+                continue;
+            }
+            Long ownerId = ownerByRoom.get(roomId);
+            if (ownerId == null) {
+                continue;
+            }
+            Map<Long, RoomUtility> byType = byRoomByType.getOrDefault(roomId, Map.of());
+            for (Long typeId : utilityTypeIds) {
+                UtilityType type = typeRepository.findByIdAndOwnerId(typeId, ownerId).orElse(null);
+                if (type == null) {
+                    failures.add(BulkAssignmentResponse.Failure.of(roomId, typeId,
+                            "Utility type does not belong to the house owner"));
+                    continue;
+                }
+                RoomUtility existing = byType.get(typeId);
+                if (existing != null && existing.getStatus() == UtilityTypeStatus.ACTIVE) {
+                    alreadyAssigned++;
+                    continue;
+                }
+                if (existing != null) {
+                    existing.setStatus(UtilityTypeStatus.ACTIVE);
+                    if (request.isIncluded() != null) {
+                        existing.setIsIncluded(request.isIncluded());
+                    }
+                    roomUtilityRepository.save(existing);
+                    created++;
+                    continue;
+                }
+                User owner = ownerCache.computeIfAbsent(ownerId,
+                        id -> userRepository.findById(id).orElse(null));
+                if (owner == null) {
+                    failures.add(BulkAssignmentResponse.Failure.of(roomId, typeId,
+                            "Owner account not found"));
+                    continue;
+                }
+                roomUtilityRepository.save(RoomUtility.builder()
+                        .owner(owner)
+                        .roomId(roomId)
+                        .utilityTypeId(typeId)
+                        .status(UtilityTypeStatus.ACTIVE)
+                        .isIncluded(Boolean.TRUE.equals(request.isIncluded()))
+                        .build());
+                created++;
+            }
+        }
+        int roomsProcessed = (int) roomIds.stream().filter(roomsById::containsKey).count();
+        return BulkAssignmentResponse.of(roomsProcessed, created, alreadyAssigned, failures);
+    }
+
+    private List<Long> distinctIds(List<Long> ids) {
+        if (ids == null) {
+            return Collections.emptyList();
+        }
+        return ids.stream().filter(Objects::nonNull).distinct().toList();
     }
 
     @Override

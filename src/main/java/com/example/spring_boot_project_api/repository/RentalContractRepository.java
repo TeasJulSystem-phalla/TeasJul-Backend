@@ -10,6 +10,7 @@ import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -37,6 +38,37 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
     List<RentalContract> findByStatus(RentalContractStatus status);
 
     boolean existsByRoomIdAndStatus(Long roomId, RentalContractStatus status);
+
+    boolean existsByContractNo(String contractNo);
+
+    // ---- Contract expiration ----
+
+    // Active contracts whose end date has already passed must be recognized as
+    // EXPIRED (end date is inclusive: a contract ending today is still active).
+    @Query("""
+        SELECT DISTINCT rc.roomId
+        FROM RentalContract rc
+        WHERE rc.status = :active
+          AND rc.endDate IS NOT NULL
+          AND rc.endDate < :today
+    """)
+    List<Long> findRoomIdsOfActiveExpiredContracts(
+            @Param("active") RentalContractStatus active,
+            @Param("today") LocalDate today);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        UPDATE RentalContract rc
+        SET rc.status = :expired,
+            rc.updatedAt = CURRENT_TIMESTAMP
+        WHERE rc.status = :active
+          AND rc.endDate IS NOT NULL
+          AND rc.endDate < :today
+    """)
+    int expireActiveContractsEndedBefore(
+            @Param("active") RentalContractStatus active,
+            @Param("expired") RentalContractStatus expired,
+            @Param("today") LocalDate today);
 
     @Query("SELECT DISTINCT rc FROM RentalContract rc, Room r " +
             "WHERE rc.roomId = r.id AND r.houseId IN :houseIds " +
@@ -131,6 +163,52 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
             @Param("search") String search,
             @Param("status") RentalContractStatus status,
             Pageable pageable);
+
+    // ---- Invoice generation eligibility ----
+
+    @Query(value = "SELECT DISTINCT rc FROM RentalContract rc, Room r " +
+            "WHERE rc.roomId = r.id AND r.houseId IN :houseIds AND rc.status = :status " +
+            "AND (:search IS NULL " +
+            "  OR UPPER(rc.contractNo) LIKE UPPER(CONCAT('%', :search, '%')) " +
+            "  OR UPPER(r.roomNumber) LIKE UPPER(CONCAT('%', :search, '%')) " +
+            "  OR rc.id IN (SELECT ct.contractId FROM ContractTenant ct, Tenant t " +
+            "      WHERE ct.tenantId = t.id " +
+            "      AND (UPPER(t.firstName) LIKE UPPER(CONCAT('%', :search, '%')) " +
+            "        OR UPPER(t.lastName) LIKE UPPER(CONCAT('%', :search, '%')) " +
+            "        OR UPPER(CONCAT(CONCAT(t.firstName, ' '), t.lastName)) " +
+            "             LIKE UPPER(CONCAT('%', :search, '%'))))) " +
+            "ORDER BY rc.updatedAt DESC",
+            countQuery = "SELECT COUNT(DISTINCT rc) FROM RentalContract rc, Room r " +
+            "WHERE rc.roomId = r.id AND r.houseId IN :houseIds AND rc.status = :status " +
+            "AND (:search IS NULL " +
+            "  OR UPPER(rc.contractNo) LIKE UPPER(CONCAT('%', :search, '%')) " +
+            "  OR UPPER(r.roomNumber) LIKE UPPER(CONCAT('%', :search, '%')) " +
+            "  OR rc.id IN (SELECT ct.contractId FROM ContractTenant ct, Tenant t " +
+            "      WHERE ct.tenantId = t.id " +
+            "      AND (UPPER(t.firstName) LIKE UPPER(CONCAT('%', :search, '%')) " +
+            "        OR UPPER(t.lastName) LIKE UPPER(CONCAT('%', :search, '%')) " +
+            "        OR UPPER(CONCAT(CONCAT(t.firstName, ' '), t.lastName)) " +
+            "             LIKE UPPER(CONCAT('%', :search, '%')))))")
+    Page<RentalContract> findEligibleForInvoice(
+            @Param("houseIds") Collection<Long> houseIds,
+            @Param("search") String search,
+            @Param("status") RentalContractStatus status,
+            Pageable pageable);
+
+    @Query("SELECT COUNT(DISTINCT rc) FROM RentalContract rc, Room r " +
+            "WHERE rc.roomId = r.id AND r.houseId IN :houseIds AND rc.status = :status")
+    long countActiveByHouseIds(
+            @Param("houseIds") Collection<Long> houseIds,
+            @Param("status") RentalContractStatus status);
+
+    @Query("SELECT COUNT(DISTINCT rc.id) FROM RentalContract rc, Room r, Invoice i " +
+            "WHERE rc.roomId = r.id AND r.houseId IN :houseIds AND rc.status = :status " +
+            "AND i.contractId = rc.id AND i.billingYear = :year AND i.billingMonth = :month")
+    long countAlreadyInvoicedByHouseIds(
+            @Param("houseIds") Collection<Long> houseIds,
+            @Param("status") RentalContractStatus status,
+            @Param("year") int year,
+            @Param("month") int month);
 
     // ---- Summary queries (grouped counts) ----
 

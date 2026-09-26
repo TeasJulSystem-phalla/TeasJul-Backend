@@ -31,6 +31,7 @@ import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.repository.OwnerSettingRepository;
 import com.example.spring_boot_project_api.repository.TenantRepository;
 import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
+import com.example.spring_boot_project_api.repository.UserRoleRepository;
 import com.example.spring_boot_project_api.service.impl.OwnerSettingServiceImpl;
 import com.example.spring_boot_project_api.service.impl.SecurityAuditLogger;
 import com.example.spring_boot_project_api.util.SecurityUtils;
@@ -47,6 +48,7 @@ class OwnerSettingServiceImplTest {
     @Mock private SecurityUtils securityUtils;
     @Mock private TenantRepository tenantRepository;
     @Mock private UserHouseAccessRepository userHouseAccessRepository;
+    @Mock private UserRoleRepository userRoleRepository;
     @Mock private SecurityAuditLogger securityAuditLogger;
 
     @InjectMocks private OwnerSettingServiceImpl ownerSettingService;
@@ -69,6 +71,7 @@ class OwnerSettingServiceImplTest {
         when(ownerSettingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(tenantRepository.findByUserId(any())).thenReturn(Optional.empty());
         when(userHouseAccessRepository.findOwnerIdsByUserId(any())).thenReturn(List.of());
+        when(userRoleRepository.findUsersByRoleCode(SecurityUtils.ROLE_OWNER)).thenReturn(List.of(owner));
     }
 
     private String themeJson(String mode, String primary, String secondary) {
@@ -195,6 +198,103 @@ class OwnerSettingServiceImplTest {
 
         verify(ownerSettingRepository, never()).save(any());
         verify(securityAuditLogger, never()).log(any(), any(), any());
+    }
+
+    // ---- SUPER_ADMIN shares the owner's single system theme ----
+
+    @Test
+    void getTheme_forSuperAdmin_returnsSharedOwnerTheme() {
+        authenticateSuperAdmin();
+
+        ThemeSettingsResponse response = ownerSettingService.getTheme();
+
+        verify(ownerSettingRepository).findByOwnerId(5L);
+        assertThat(response.ownerId()).isEqualTo(5L);
+        assertThat(response.primaryColor()).isEqualTo("#111111");
+        assertThat(response.secondaryColor()).isEqualTo("#222222");
+    }
+
+    @Test
+    void updateTheme_bySuperAdmin_updatesSharedOwnerSetting() {
+        authenticateSuperAdmin();
+
+        ThemeSettingsResponse response = ownerSettingService.updateTheme(
+                new UpdateThemeRequest("DARK", "#ff0000", "#00ff00"));
+
+        verify(ownerSettingRepository).findByOwnerId(5L);
+        verify(ownerSettingRepository).save(setting);
+        assertThat(setting.getSettings())
+                .contains("\"themeMode\":\"DARK\"")
+                .contains("\"primaryColor\":\"#FF0000\"")
+                .contains("\"secondaryColor\":\"#00FF00\"");
+        assertThat(response.primaryColor()).isEqualTo("#FF0000");
+    }
+
+    @Test
+    void updateTheme_ownerAndSuperAdmin_shareOnePersistedSetting() {
+        ownerSettingService.updateTheme(new UpdateThemeRequest("DARK", "#123456", "#654321"));
+        String afterOwner = setting.getSettings();
+
+        authenticateSuperAdmin();
+        ThemeSettingsResponse asSuperAdmin = ownerSettingService.getTheme();
+        ownerSettingService.updateTheme(new UpdateThemeRequest("LIGHT", "#AABBCC", "#DDEEFF"));
+        String afterSuperAdmin = setting.getSettings();
+
+        // The super admin reads and writes the very row the owner wrote.
+        assertThat(asSuperAdmin.primaryColor()).isEqualTo("#123456");
+        assertThat(afterOwner).isNotEqualTo(afterSuperAdmin);
+        verify(ownerSettingRepository, org.mockito.Mockito.atLeast(2))
+                .findByOwnerId(5L);
+        verify(ownerSettingRepository, never()).findByOwnerId(1L);
+    }
+
+    @Test
+    void resetTheme_bySuperAdmin_updatesSharedOwnerSetting() {
+        authenticateSuperAdmin();
+
+        ThemeSettingsResponse response = ownerSettingService.resetTheme();
+
+        verify(ownerSettingRepository).findByOwnerId(5L);
+        verify(ownerSettingRepository).save(setting);
+        assertThat(response.primaryColor()).isEqualTo("#2563EB");
+        assertThat(response.secondaryColor()).isEqualTo("#0F172A");
+    }
+
+    @Test
+    void updateTheme_byManager_isForbidden() {
+        authenticateRole(SecurityUtils.ROLE_MANAGER);
+
+        assertThatThrownBy(() -> ownerSettingService.updateTheme(
+                new UpdateThemeRequest("DARK", "#ff0000", "#00ff00")))
+                .isInstanceOf(AccessDeniedException.class);
+
+        verify(ownerSettingRepository, never()).save(any());
+    }
+
+    @Test
+    void updateTheme_byTenant_isForbidden() {
+        authenticateRole(SecurityUtils.ROLE_TENANT);
+
+        assertThatThrownBy(() -> ownerSettingService.updateTheme(
+                new UpdateThemeRequest("DARK", "#ff0000", "#00ff00")))
+                .isInstanceOf(AccessDeniedException.class);
+
+        verify(ownerSettingRepository, never()).save(any());
+    }
+
+    private void authenticateSuperAdmin() {
+        User admin = User.builder().id(1L).username("admin1").email("admin@test.com").build();
+        when(securityUtils.getCurrentUser()).thenReturn(admin);
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(false);
+        when(securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(true);
+    }
+
+    private void authenticateRole(String roleCode) {
+        User user = User.builder().id(9L).username("user9").email("user9@test.com").build();
+        when(securityUtils.getCurrentUser()).thenReturn(user);
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(false);
+        when(securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(false);
+        when(securityUtils.hasRole(roleCode)).thenReturn(true);
     }
 
     @Test

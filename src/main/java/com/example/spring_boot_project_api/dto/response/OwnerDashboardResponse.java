@@ -23,7 +23,7 @@ public record OwnerDashboardResponse(
             double occupancyRate,
             BigDecimal totalRevenue,
             BigDecimal overdueAmount,
-            long openMaintenanceRequests
+            BigDecimal paidDeposit
     ) {
     }
 

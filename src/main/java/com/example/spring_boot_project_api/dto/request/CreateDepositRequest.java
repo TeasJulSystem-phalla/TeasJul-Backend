@@ -1,6 +1,9 @@
 package com.example.spring_boot_project_api.dto.request;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+
+import com.example.spring_boot_project_api.enums.ContractDepositStatus;
 
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
@@ -13,5 +16,9 @@ public record CreateDepositRequest(
     @DecimalMin(value = "0.01", message = "Amount must be greater than zero")
     BigDecimal amount,
 
-    String notes
+    String notes,
+
+    ContractDepositStatus status,
+
+    LocalDate paidAt
 ) {}

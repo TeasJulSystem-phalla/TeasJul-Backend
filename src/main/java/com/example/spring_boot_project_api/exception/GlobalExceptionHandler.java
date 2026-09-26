@@ -403,6 +403,24 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request, flat.isEmpty() ? null : flat);
     }
 
+    @ExceptionHandler(MeterImportValidationException.class)
+    public ResponseEntity<ErrorResponse> handleMeterImportValidation(MeterImportValidationException ex,
+            HttpServletRequest request) {
+        Map<String, String> flat = new HashMap<>();
+        ex.getRowErrors().forEach((row, errors) ->
+                flat.put("Row " + row, String.join(". ", errors)));
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request, flat.isEmpty() ? null : flat);
+    }
+
+    @ExceptionHandler(RoomMeterImportValidationException.class)
+    public ResponseEntity<ErrorResponse> handleRoomMeterImportValidation(RoomMeterImportValidationException ex,
+            HttpServletRequest request) {
+        Map<String, String> flat = new HashMap<>();
+        ex.getRowErrors().forEach((row, errors) ->
+                flat.put("Row " + row, String.join(". ", errors)));
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request, flat.isEmpty() ? null : flat);
+    }
+
     @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ErrorResponse> handleTypeMismatch(
             org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex,

@@ -9,6 +9,8 @@ import com.example.spring_boot_project_api.dto.request.AddInvoiceItemRequest;
 import com.example.spring_boot_project_api.dto.request.BulkGenerateInvoiceRequest;
 import com.example.spring_boot_project_api.dto.request.GenerateInvoiceRequest;
 import com.example.spring_boot_project_api.dto.response.BulkGenerateInvoiceResponse;
+import com.example.spring_boot_project_api.dto.response.ContractEligibleResponse;
+import com.example.spring_boot_project_api.dto.response.GenerateBulkPreviewResponse;
 import com.example.spring_boot_project_api.dto.response.InvoicePreviewResponse;
 import com.example.spring_boot_project_api.dto.response.InvoiceResponse;
 import com.example.spring_boot_project_api.dto.response.PageResponse;
@@ -21,6 +23,11 @@ public interface InvoiceService {
     BulkGenerateInvoiceResponse generateBulkInvoices(BulkGenerateInvoiceRequest request);
 
     InvoicePreviewResponse previewInvoice(GenerateInvoiceRequest request);
+
+    PageResponse<ContractEligibleResponse> getEligibleContracts(Long houseId, String search,
+            Integer billingYear, Integer billingMonth, Pageable pageable);
+
+    GenerateBulkPreviewResponse previewBulkGeneration(Long houseId, Integer billingYear, Integer billingMonth);
 
     PageResponse<InvoiceResponse> getInvoices(Long houseId, String search, InvoiceStatus status,
             Integer billingYear, Integer billingMonth, Long tenantId, LocalDate fromDate,

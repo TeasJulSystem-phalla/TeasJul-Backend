@@ -53,6 +53,19 @@
 			<version>3.0.2</version>
 		</dependency>
 
+		<!-- Token-bucket rate limiting (battle-tested, Java 17+ line) -->
+		<dependency>
+			<groupId>com.bucket4j</groupId>
+			<artifactId>bucket4j_jdk17-core</artifactId>
+			<version>8.19.0</version>
+		</dependency>
+		<!-- Bounded in-memory cache so rate-limit buckets can never grow unbounded -->
+		<dependency>
+			<groupId>com.github.ben-manes.caffeine</groupId>
+			<artifactId>caffeine</artifactId>
+			<version>3.2.0</version>
+		</dependency>
+
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-devtools</artifactId>

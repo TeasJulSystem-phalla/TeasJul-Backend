@@ -18,6 +18,7 @@ import com.example.spring_boot_project_api.repository.ContractRenewalRepository;
 import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.service.ContractRenewalService;
 import com.example.spring_boot_project_api.service.HouseAccessService;
+import com.example.spring_boot_project_api.service.RentalContractService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -31,12 +32,15 @@ public class ContractRenewalServiceImpl implements ContractRenewalService {
     private final ContractRenewalMapper renewalMapper;
     private final SecurityUtils securityUtils;
     private final HouseAccessService houseAccessService;
+    private final RentalContractService rentalContractService;
 
     @Override
     @Transactional
     public ContractRenewalResponse createRenewal(CreateRenewalRequest request) {
         RentalContract contract = getOwnedContract(request.contractId());
         User createdBy = securityUtils.getCurrentUser();
+
+        rentalContractService.applyRenewal(contract.getId(), request.newEndDate());
 
         ContractRenewal saved = renewalRepository.save(renewalMapper.toEntity(contract, createdBy, request));
         return renewalMapper.toResponse(saved);

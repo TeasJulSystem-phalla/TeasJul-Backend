@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -46,6 +47,7 @@ import com.example.spring_boot_project_api.model.ContractTenant;
 import com.example.spring_boot_project_api.model.House;
 import com.example.spring_boot_project_api.model.Invoice;
 import com.example.spring_boot_project_api.model.InvoiceItem;
+import com.example.spring_boot_project_api.model.Payment;
 import com.example.spring_boot_project_api.model.RentalContract;
 import com.example.spring_boot_project_api.model.Room;
 import com.example.spring_boot_project_api.model.Tenant;
@@ -366,10 +368,11 @@ class TenantDashboardServiceImplTest {
                 LocalDate.of(2026, 8, 5));
 
         when(invoiceRepository.findByContractIdIn(List.of(100L))).thenReturn(List.of(paid, overdue, partial));
-        when(paymentRepository.sumPaidAmountByInvoiceIds(anyList(), eq(PaymentStatus.PAID)))
-                .thenReturn(List.<Object[]>of(
-                        new Object[]{1L, new BigDecimal("90.00")},
-                        new Object[]{3L, new BigDecimal("40.00")}));
+        when(paymentRepository.findByInvoiceIdInAndStatus(
+                List.of(1L, 2L, 3L), PaymentStatus.PAID))
+                .thenReturn(List.of(
+                        payment(1L, "90.00", LocalDate.of(2026, 6, 5)),
+                        payment(3L, "40.00", LocalDate.of(2026, 8, 1))));
 
         List<TenantPaymentHistoryResponse> history =
                 service.getPaymentHistory(YearMonth.of(2026, 6), YearMonth.of(2026, 8));
@@ -391,14 +394,261 @@ class TenantDashboardServiceImplTest {
         Invoice inside = invoice(2L, 2026, 7, "85.00", InvoiceStatus.PAID,
                 LocalDate.of(2026, 7, 5));
         when(invoiceRepository.findByContractIdIn(List.of(100L))).thenReturn(List.of(outside, inside));
-        when(paymentRepository.sumPaidAmountByInvoiceIds(anyList(), eq(PaymentStatus.PAID)))
-                .thenReturn(List.<Object[]>of(new Object[]{2L, new BigDecimal("85.00")}));
+        when(paymentRepository.findByInvoiceIdInAndStatus(
+                List.of(1L, 2L), PaymentStatus.PAID))
+                .thenReturn(List.of(payment(2L, "85.00", LocalDate.of(2026, 7, 5))));
 
         List<TenantPaymentHistoryResponse> history =
                 service.getPaymentHistory(YearMonth.of(2026, 6), YearMonth.of(2026, 8));
 
         assertThat(history).hasSize(1);
         assertThat(history.get(0).month()).isEqualTo("2026-07");
+        assertThat(history.get(0).status()).isEqualTo(InvoiceStatus.PAID);
+    }
+
+    @Test
+    void dashboard_utilitySummaryRecognizesUtilitiesByUnitForPlaceholderCodes() {
+        when(tenantContextResolver.activeContractOf(50L)).thenReturn(activeContract());
+        when(roomRepository.findById(10L)).thenReturn(Optional.of(room()));
+
+        User owner = User.builder().id(2L).build();
+        UtilityType electricity = UtilityType.builder().id(5L).code("DEFAULT4876\u17E3").unit("kWh").build();
+        UtilityType water = UtilityType.builder().id(6L).code("DEFAULT4876").unit("m3").build();
+        UtilityMeter elecMeter = UtilityMeter.builder()
+                .id(20L).owner(owner).roomId(10L).utilityTypeId(5L).meterNumber("M-001")
+                .status(UtilityMeterStatus.ACTIVE).build();
+        UtilityMeter waterMeter = UtilityMeter.builder()
+                .id(21L).owner(owner).roomId(10L).utilityTypeId(6L).meterNumber("M-002")
+                .status(UtilityMeterStatus.ACTIVE).build();
+
+        when(utilityMeterRepository.findByRoomId(10L)).thenReturn(List.of(elecMeter, waterMeter));
+        when(utilityTypeRepository.findById(5L)).thenReturn(Optional.of(electricity));
+        when(utilityTypeRepository.findById(6L)).thenReturn(Optional.of(water));
+        when(utilityReadingRepository.findTopByMeterIdOrderByReadingDateDesc(20L))
+                .thenReturn(Optional.of(readingOf(elecMeter, "11", LocalDate.of(2026, 12, 31))));
+        when(utilityReadingRepository.findTopByMeterIdOrderByReadingDateDesc(21L))
+                .thenReturn(Optional.of(readingOf(waterMeter, "11", LocalDate.of(2026, 12, 31))));
+
+        TenantDashboardResponse response = service.getDashboard();
+
+        assertThat(response.utilities().electricity()).isNotNull();
+        assertThat(response.utilities().electricity().usage()).isEqualByComparingTo("11");
+        assertThat(response.utilities().electricity().unit()).isEqualTo("kWh");
+        assertThat(response.utilities().electricity().month()).isEqualTo("2026-12");
+        assertThat(response.utilities().water()).isNotNull();
+        assertThat(response.utilities().water().usage()).isEqualByComparingTo("11");
+        assertThat(response.utilities().water().unit()).isEqualTo("m3");
+        assertThat(response.utilities().water().month()).isEqualTo("2026-12");
+    }
+
+    @Test
+    void utilityUsage_recognizesBucketsByUnitWhenCodeIsUnrecognized() {
+        when(tenantContextResolver.activeContractOf(50L)).thenReturn(activeContract());
+        when(roomRepository.findById(10L)).thenReturn(Optional.of(room()));
+
+        User owner = User.builder().id(2L).build();
+        UtilityType electricity = UtilityType.builder().id(5L).code("DEFAULT4876\u17E3").unit("kWh").build();
+        UtilityType water = UtilityType.builder().id(6L).code("DEFAULT4876").unit("m3").build();
+        UtilityMeter elecMeter = UtilityMeter.builder()
+                .id(20L).owner(owner).roomId(10L).utilityTypeId(5L).meterNumber("M-001")
+                .status(UtilityMeterStatus.ACTIVE).build();
+        UtilityMeter waterMeter = UtilityMeter.builder()
+                .id(21L).owner(owner).roomId(10L).utilityTypeId(6L).meterNumber("M-002")
+                .status(UtilityMeterStatus.ACTIVE).build();
+
+        when(utilityMeterRepository.findByRoomId(10L)).thenReturn(List.of(elecMeter, waterMeter));
+        when(utilityTypeRepository.findById(5L)).thenReturn(Optional.of(electricity));
+        when(utilityTypeRepository.findById(6L)).thenReturn(Optional.of(water));
+        when(utilityReadingRepository.findByMeterIdInAndReadingDateBetween(
+                List.of(20L, 21L), LocalDate.of(2026, 4, 1), LocalDate.of(2026, 9, 30)))
+                .thenReturn(List.of(
+                        readingOf(elecMeter, "21", LocalDate.of(2026, 9, 30)),
+                        readingOf(waterMeter, "11", LocalDate.of(2026, 9, 30))));
+
+        TenantUtilityTrendResponse response =
+                service.getUtilityUsage(YearMonth.of(2026, 4), YearMonth.of(2026, 9));
+
+        assertThat(response.electricity()).hasSize(1);
+        assertThat(response.electricity().get(0).usage()).isEqualByComparingTo("21");
+        assertThat(response.electricity().get(0).unit()).isEqualTo("kWh");
+        assertThat(response.water()).hasSize(1);
+        assertThat(response.water().get(0).usage()).isEqualByComparingTo("11");
+        assertThat(response.water().get(0).unit()).isEqualTo("m3");
+    }
+
+    @Test
+    void dashboard_ignoresInactiveMeters() {
+        when(tenantContextResolver.activeContractOf(50L)).thenReturn(activeContract());
+        when(roomRepository.findById(10L)).thenReturn(Optional.of(room()));
+
+        User owner = User.builder().id(2L).build();
+        UtilityType electricity = UtilityType.builder().id(5L).code("ELEC").unit("kWh").build();
+        UtilityType water = UtilityType.builder().id(6L).code("WTR").unit("m3").build();
+        UtilityMeter elecMeter = UtilityMeter.builder()
+                .id(20L).owner(owner).roomId(10L).utilityTypeId(5L).meterNumber("M-001")
+                .status(UtilityMeterStatus.ACTIVE).build();
+        UtilityMeter waterMeter = UtilityMeter.builder()
+                .id(21L).owner(owner).roomId(10L).utilityTypeId(6L).meterNumber("M-002")
+                .status(UtilityMeterStatus.INACTIVE).build();
+
+        when(utilityMeterRepository.findByRoomId(10L)).thenReturn(List.of(elecMeter, waterMeter));
+        when(utilityTypeRepository.findById(5L)).thenReturn(Optional.of(electricity));
+        when(utilityTypeRepository.findById(6L)).thenReturn(Optional.of(water));
+        when(utilityReadingRepository.findTopByMeterIdOrderByReadingDateDesc(20L))
+                .thenReturn(Optional.of(readingOf(elecMeter, "75.5", LocalDate.of(2026, 9, 30))));
+
+        TenantDashboardResponse response = service.getDashboard();
+
+        assertThat(response.utilities().electricity()).isNotNull();
+        assertThat(response.utilities().electricity().usage()).isEqualByComparingTo("75.5");
+        assertThat(response.utilities().water()).isNull();
+    }
+
+    @Test
+    void dashboard_skipsUtilityTypesWithoutRecognizedBucket() {
+        when(tenantContextResolver.activeContractOf(50L)).thenReturn(activeContract());
+        when(roomRepository.findById(10L)).thenReturn(Optional.of(room()));
+
+        User owner = User.builder().id(2L).build();
+        UtilityType garbage = UtilityType.builder().id(7L).code("TRASH").unit("month").build();
+        UtilityMeter meter = UtilityMeter.builder()
+                .id(20L).owner(owner).roomId(10L).utilityTypeId(7L).meterNumber("M-003")
+                .status(UtilityMeterStatus.ACTIVE).build();
+
+        when(utilityMeterRepository.findByRoomId(10L)).thenReturn(List.of(meter));
+        when(utilityTypeRepository.findById(7L)).thenReturn(Optional.of(garbage));
+        when(utilityReadingRepository.findTopByMeterIdOrderByReadingDateDesc(20L))
+                .thenReturn(Optional.of(readingOf(meter, "5", LocalDate.of(2026, 9, 30))));
+
+        TenantDashboardResponse response = service.getDashboard();
+
+        assertThat(response.utilities().water()).isNull();
+        assertThat(response.utilities().electricity()).isNull();
+    }
+
+    @Test
+    void dashboard_keepsUtilitiesEmptyWhenMetersHaveNoReadings() {
+        when(tenantContextResolver.activeContractOf(50L)).thenReturn(activeContract());
+        when(roomRepository.findById(10L)).thenReturn(Optional.of(room()));
+
+        User owner = User.builder().id(2L).build();
+        UtilityType electricity = UtilityType.builder().id(5L).code("ELECTRICITY").unit("kWh").build();
+        UtilityMeter elecMeter = UtilityMeter.builder()
+                .id(20L).owner(owner).roomId(10L).utilityTypeId(5L).meterNumber("M-001")
+                .status(UtilityMeterStatus.ACTIVE).build();
+
+        when(utilityMeterRepository.findByRoomId(10L)).thenReturn(List.of(elecMeter));
+        when(utilityTypeRepository.findById(5L)).thenReturn(Optional.of(electricity));
+        when(utilityReadingRepository.findTopByMeterIdOrderByReadingDateDesc(20L))
+                .thenReturn(Optional.empty());
+
+        TenantDashboardResponse response = service.getDashboard();
+
+        assertThat(response.utilities().water()).isNull();
+        assertThat(response.utilities().electricity()).isNull();
+    }
+
+    @Test
+    void paymentHistory_surfacesPaidInvoiceWithFutureBillingMonthWhenPaymentIsInRange() {
+        Invoice dec = invoice(9L, 2026, 12, "153.52", InvoiceStatus.PAID,
+                LocalDate.of(2026, 12, 5));
+        when(invoiceRepository.findByContractIdIn(List.of(100L))).thenReturn(List.of(dec));
+        when(paymentRepository.findByInvoiceIdInAndStatus(List.of(9L), PaymentStatus.PAID))
+                .thenReturn(List.of(payment(9L, "153.52", LocalDate.of(2026, 9, 23))));
+
+        List<TenantPaymentHistoryResponse> history =
+                service.getPaymentHistory(YearMonth.of(2026, 1), YearMonth.of(2026, 9));
+
+        assertThat(history).hasSize(1);
+        assertThat(history.get(0).month()).isEqualTo("2026-12");
+        assertThat(history.get(0).amount()).isEqualByComparingTo("153.52");
+        assertThat(history.get(0).status()).isEqualTo(InvoiceStatus.PAID);
+    }
+
+    @Test
+    void paymentHistory_aggregatesMultiplePaidMonthsAscending() {
+        Invoice jun = invoice(1L, 2026, 6, "90.00", InvoiceStatus.PAID,
+                LocalDate.of(2026, 6, 5));
+        Invoice jul = invoice(2L, 2026, 7, "85.00", InvoiceStatus.PAID,
+                LocalDate.of(2026, 7, 5));
+        when(invoiceRepository.findByContractIdIn(List.of(100L))).thenReturn(List.of(jun, jul));
+        when(paymentRepository.findByInvoiceIdInAndStatus(List.of(1L, 2L), PaymentStatus.PAID))
+                .thenReturn(List.of(
+                        payment(1L, "90.00", LocalDate.of(2026, 6, 5)),
+                        payment(2L, "85.00", LocalDate.of(2026, 7, 5))));
+
+        List<TenantPaymentHistoryResponse> history =
+                service.getPaymentHistory(YearMonth.of(2026, 5), YearMonth.of(2026, 8));
+
+        assertThat(history).hasSize(2);
+        assertThat(history.get(0).month()).isEqualTo("2026-06");
+        assertThat(history.get(0).amount()).isEqualByComparingTo("90.00");
+        assertThat(history.get(0).status()).isEqualTo(InvoiceStatus.PAID);
+        assertThat(history.get(1).month()).isEqualTo("2026-07");
+        assertThat(history.get(1).amount()).isEqualByComparingTo("85.00");
+        assertThat(history.get(1).status()).isEqualTo(InvoiceStatus.PAID);
+    }
+
+    @Test
+    void paymentHistory_isScopedToOwningTenantsContracts() {
+        ContractTenant secondLink = ContractTenant.builder().id(2L).tenantId(50L).contractId(200L).build();
+        when(contractTenantRepository.findByTenantId(50L)).thenReturn(List.of(link, secondLink));
+
+        Invoice a = invoice(1L, 2026, 6, "90.00", InvoiceStatus.PAID,
+                LocalDate.of(2026, 6, 5));
+        Invoice b = invoice(2L, 2026, 7, "85.00", InvoiceStatus.PAID,
+                LocalDate.of(2026, 7, 5));
+        when(invoiceRepository.findByContractIdIn(List.of(100L, 200L))).thenReturn(List.of(a, b));
+        when(paymentRepository.findByInvoiceIdInAndStatus(List.of(1L, 2L), PaymentStatus.PAID))
+                .thenReturn(List.of(
+                        payment(1L, "90.00", LocalDate.of(2026, 6, 5)),
+                        payment(2L, "85.00", LocalDate.of(2026, 7, 5))));
+
+        List<TenantPaymentHistoryResponse> history =
+                service.getPaymentHistory(YearMonth.of(2026, 6), YearMonth.of(2026, 8));
+
+        verify(invoiceRepository).findByContractIdIn(List.of(100L, 200L));
+        assertThat(history).hasSize(2);
+        assertThat(history.get(0).month()).isEqualTo("2026-06");
+        assertThat(history.get(1).month()).isEqualTo("2026-07");
+    }
+
+    @Test
+    void paymentHistory_surfacesExistingPaidInvoiceWithoutChangingItsAmount() {
+        Invoice jan = invoice(5L, 2026, 1, "120.66", InvoiceStatus.PAID,
+                LocalDate.of(2026, 1, 5));
+        when(invoiceRepository.findByContractIdIn(List.of(100L))).thenReturn(List.of(jan));
+        when(paymentRepository.findByInvoiceIdInAndStatus(List.of(5L), PaymentStatus.PAID))
+                .thenReturn(List.of(payment(5L, "120.66", LocalDate.of(2026, 1, 3))));
+
+        List<TenantPaymentHistoryResponse> history =
+                service.getPaymentHistory(YearMonth.of(2026, 1), YearMonth.of(2026, 3));
+
+        assertThat(history).hasSize(1);
+        assertThat(history.get(0).month()).isEqualTo("2026-01");
+        assertThat(history.get(0).amount()).isEqualByComparingTo("120.66");
+        assertThat(history.get(0).status()).isEqualTo(InvoiceStatus.PAID);
+    }
+
+    @Test
+    void paymentHistory_isEmptyOnlyWhenTenantGenuinelyHasNoPaymentData() {
+        when(contractTenantRepository.findByTenantId(50L)).thenReturn(List.of());
+        assertThat(service.getPaymentHistory(YearMonth.of(2026, 1), YearMonth.of(2026, 9)))
+                .isEmpty();
+
+        when(contractTenantRepository.findByTenantId(50L)).thenReturn(List.of(link));
+        Invoice pending = invoice(6L, 2026, 9, "80.00", InvoiceStatus.PENDING,
+                LocalDate.now().plusDays(30));
+        when(invoiceRepository.findByContractIdIn(List.of(100L))).thenReturn(List.of(pending));
+        when(paymentRepository.findByInvoiceIdInAndStatus(List.of(6L), PaymentStatus.PAID))
+                .thenReturn(List.of());
+
+        List<TenantPaymentHistoryResponse> withUnpaidInvoices =
+                service.getPaymentHistory(YearMonth.of(2026, 1), YearMonth.of(2026, 9));
+
+        assertThat(withUnpaidInvoices).hasSize(1);
+        assertThat(withUnpaidInvoices.get(0).month()).isEqualTo("2026-09");
+        assertThat(withUnpaidInvoices.get(0).status()).isEqualTo(InvoiceStatus.PENDING);
     }
 
     @Test
@@ -485,6 +735,19 @@ class TenantDashboardServiceImplTest {
         assertThat(response).isSameAs(expected);
         assertThat(response.roomNumber()).isEqualTo("A101");
         assertThat(response.total()).isEqualByComparingTo("90.00");
+    }
+
+    private static Payment payment(Long invoiceId, String amount, LocalDate paidDate) {
+        return Payment.builder()
+                .id(invoiceId)
+                .invoiceId(invoiceId)
+                .paymentNo("PAY-" + invoiceId)
+                .transactionId("TXN-" + invoiceId)
+                .amount(new BigDecimal(amount))
+                .status(PaymentStatus.PAID)
+                .paidAt(paidDate.atStartOfDay())
+                .createdAt(paidDate.atStartOfDay())
+                .build();
     }
 
     private static UtilityReading readingOf(UtilityMeter meter, String usage, LocalDate date) {

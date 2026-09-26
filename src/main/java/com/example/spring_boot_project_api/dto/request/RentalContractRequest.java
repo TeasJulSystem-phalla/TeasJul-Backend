@@ -8,14 +8,14 @@ import com.example.spring_boot_project_api.enums.RentalContractStatus;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 @Data
 public class RentalContractRequest {
-    @NotBlank(message = "Contract number is required")
+    // The business contract number is generated on the backend during creation and
+    // is preserved on update. Any value sent by the client is ignored/overwritten.
     @Size(max = 50, message = "Contract number must not exceed 50 characters")
     private String contractNo;
 

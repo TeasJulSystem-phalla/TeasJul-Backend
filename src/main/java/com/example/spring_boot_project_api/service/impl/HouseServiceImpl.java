@@ -1,6 +1,7 @@
 package com.example.spring_boot_project_api.service.impl;
 
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -35,6 +36,7 @@ import com.example.spring_boot_project_api.model.Tenant;
 import com.example.spring_boot_project_api.repository.ContractTenantRepository;
 import com.example.spring_boot_project_api.repository.HouseImageRepository;
 import com.example.spring_boot_project_api.repository.HouseRepository;
+import com.example.spring_boot_project_api.repository.HouseRoomCountProjection;
 import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.TenantRepository;
@@ -75,7 +77,12 @@ public class HouseServiceImpl implements HouseService {
         House house = houseMapper.toEntity(request);
         house.setOwner(securityUtils.getCurrentUser());
 
-        return houseMapper.toResponse(houseRepository.save(house));
+        // Room counts are derived from the actual rooms table, never from input.
+        house.setTotalRooms(0);
+        house.setAvailableRooms(0);
+
+        House saved = houseRepository.save(house);
+        return houseMapper.toResponse(saved).withRoomCounts(0, 0);
     }
 
     @Override
@@ -83,7 +90,7 @@ public class HouseServiceImpl implements HouseService {
     public HouseResponse getHouseById(Long id) {
         securityUtils.requirePermission(PermissionConstants.HOUSE_VIEW);
         House house = requireOwnerOrManager(id);
-        return houseMapper.toResponse(house, primaryImageUrl(house.getId()));
+        return withDerivedRoomCounts(house, primaryImageUrl(house.getId()));
     }
 
     @Override
@@ -107,17 +114,43 @@ public class HouseServiceImpl implements HouseService {
     }
 
     private List<HouseResponse> toResponsesWithPrimaryImages(List<House> houses) {
+        if (houses.isEmpty()) {
+            return List.of();
+        }
         List<Long> houseIds = houses.stream().map(House::getId).toList();
-        Map<Long, String> primaryByHouseId = houseIds.isEmpty()
-                ? Map.of()
-                : houseImageRepository.findPrimaryByHouseIds(houseIds).stream()
-                        .collect(Collectors.toMap(
-                                image -> image.getHouse().getId(),
-                                HouseImage::getSecureUrl,
-                                (first, ignored) -> first));
+        Map<Long, String> primaryByHouseId = houseImageRepository.findPrimaryByHouseIds(houseIds).stream()
+                .collect(Collectors.toMap(
+                        image -> image.getHouse().getId(),
+                        HouseImage::getSecureUrl,
+                        (first, ignored) -> first));
+
+        Map<Long, Long> totalByHouseId = new HashMap<>();
+        Map<Long, Long> availableByHouseId = new HashMap<>();
+        for (HouseRoomCountProjection count : roomRepository.countRoomsByHouseIds(houseIds)) {
+            totalByHouseId.put(count.getHouseId(), count.getRoomCount());
+        }
+        for (HouseRoomCountProjection count : roomRepository.countRoomsByHouseIdsAndStatus(
+                houseIds, RoomStatus.AVAILABLE)) {
+            availableByHouseId.put(count.getHouseId(), count.getRoomCount());
+        }
+
         return houses.stream()
-                .map(house -> houseMapper.toResponse(house, primaryByHouseId.get(house.getId())))
+                .map(house -> houseMapper.toResponse(house, primaryByHouseId.get(house.getId()))
+                        .withRoomCounts(
+                                totalByHouseId.getOrDefault(house.getId(), 0L).intValue(),
+                                availableByHouseId.getOrDefault(house.getId(), 0L).intValue()))
                 .toList();
+    }
+
+    /**
+     * Maps the house to a response and replaces the persisted room counts with
+     * the values calculated from the actual {@code rooms} records.
+     */
+    private HouseResponse withDerivedRoomCounts(House house, String primaryImage) {
+        int totalRooms = Math.toIntExact(roomRepository.countByHouseId(house.getId()));
+        int availableRooms = Math.toIntExact(
+                roomRepository.countByHouseIdAndStatus(house.getId(), RoomStatus.AVAILABLE));
+        return houseMapper.toResponse(house, primaryImage).withRoomCounts(totalRooms, availableRooms);
     }
 
     private String primaryImageUrl(Long houseId) {
@@ -163,12 +196,8 @@ public class HouseServiceImpl implements HouseService {
         if (request.googleMapsUrl() != null) {
             house.setGoogleMapsUrl(request.googleMapsUrl());
         }
-        if (request.totalRooms() != null) {
-            house.setTotalRooms(request.totalRooms());
-        }
-        if (request.availableRooms() != null) {
-            house.setAvailableRooms(request.availableRooms());
-        }
+        // totalRooms/availableRooms are read-only derived values; any values sent
+        // by the client are intentionally ignored and recalculated from rooms.
         if (request.description() != null) {
             house.setDescription(request.description());
         }
@@ -203,7 +232,7 @@ public class HouseServiceImpl implements HouseService {
             house.setNumberOfFloors(request.numberOfFloors());
         }
 
-        return houseMapper.toResponse(houseRepository.save(house));
+        return withDerivedRoomCounts(houseRepository.save(house), null);
     }
 
     @Override

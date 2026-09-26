@@ -1,5 +1,7 @@
 package com.example.spring_boot_project_api.controller;
 
+import java.io.IOException;
+
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -14,12 +16,17 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.example.spring_boot_project_api.dto.request.CreateUtilityMeterRequest;
+import com.example.spring_boot_project_api.dto.request.MeterImportRequest;
 import com.example.spring_boot_project_api.dto.request.UpdateUtilityMeterRequest;
+import com.example.spring_boot_project_api.dto.response.MeterImportPreviewResponse;
+import com.example.spring_boot_project_api.dto.response.MeterImportResult;
 import com.example.spring_boot_project_api.dto.response.PageResponse;
 import com.example.spring_boot_project_api.dto.response.UtilityMeterResponse;
 import com.example.spring_boot_project_api.enums.UtilityMeterStatus;
+import com.example.spring_boot_project_api.service.MeterImportService;
 import com.example.spring_boot_project_api.service.UtilityMeterService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -35,6 +42,7 @@ import lombok.RequiredArgsConstructor;
 public class UtilityMeterController {
 
     private final UtilityMeterService utilityMeterService;
+    private final MeterImportService meterImportService;
 
     @Operation(summary = "Create a utility meter",
             description = "Creates a utility meter owned by the currently authenticated user. "
@@ -55,7 +63,7 @@ public class UtilityMeterController {
             @RequestParam(required = false) Long roomId,
             @RequestParam(required = false) Long utilityTypeId,
             @RequestParam(required = false) UtilityMeterStatus status,
-            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+            @PageableDefault(size = 10, sort = { "createdAt", "id" }, direction = Sort.Direction.DESC) Pageable pageable) {
         return ResponseEntity.ok(utilityMeterService.getMeters(search, houseId, roomId,
                 utilityTypeId, status, pageable));
     }
@@ -66,6 +74,29 @@ public class UtilityMeterController {
     @GetMapping("/{id}")
     public ResponseEntity<UtilityMeterResponse> getMeterById(@PathVariable Long id) {
         return ResponseEntity.ok(utilityMeterService.getMeterById(id));
+    }
+
+    @Operation(summary = "Parse and validate an uploaded utility meter CSV/Excel file",
+            description = "Returns a row-level preview with errors/warnings. Nothing is written.")
+    @PostMapping("/import/preview")
+    public ResponseEntity<MeterImportPreviewResponse> previewImport(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "houseId", required = false) Long houseId) throws IOException {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("Uploaded file is empty");
+        }
+        return ResponseEntity.ok(meterImportService.previewImport(
+                houseId, file.getOriginalFilename(), file.getBytes()));
+    }
+
+    @Operation(summary = "Confirm and transactionally import utility meters",
+            description = "Re-validates every row server-side before writing. Single transaction; "
+                    + "on any error nothing is persisted.")
+    @PostMapping("/import")
+    public ResponseEntity<MeterImportResult> importMeters(
+            @Valid @RequestBody MeterImportRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(meterImportService.importMeters(request));
     }
 
     @Operation(summary = "Update a utility meter",

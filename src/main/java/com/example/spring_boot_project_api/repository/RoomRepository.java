@@ -68,6 +68,23 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
     Page<Room> findPendingApprovalRooms(@Param("publicationStatus") RoomPublicationStatus publicationStatus,
             Pageable pageable);
 
+    /**
+     * SUPER_ADMIN review-workflow listing: every {@link Room}, optionally
+     * filtered by publication status and/or room availability status. Both
+     * filters are independent and nullable, so a room that is PUBLISHED while
+     * OCCUPIED is still returned (and vice versa). Callers apply the sort via
+     * the {@link Pageable}.
+     */
+    @Query("""
+            SELECT r FROM Room r
+            WHERE (:publicationStatus IS NULL OR r.publicationStatus = :publicationStatus)
+              AND (:roomStatus IS NULL OR r.status = :roomStatus)
+            """)
+    Page<Room> findRoomsForReview(
+            @Param("publicationStatus") RoomPublicationStatus publicationStatus,
+            @Param("roomStatus") RoomStatus roomStatus,
+            Pageable pageable);
+
     Page<Room> findByPublicationStatusAndStatus(RoomPublicationStatus publicationStatus,
             RoomStatus roomStatus, Pageable pageable);
 
@@ -227,6 +244,16 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
     long countByHouseIdAndStatus(Long houseId, RoomStatus status);
 
     long countByHouseId(Long houseId);
+
+    @Query("SELECT r.houseId AS houseId, COUNT(r) AS roomCount FROM Room r "
+            + "WHERE r.houseId IN :houseIds GROUP BY r.houseId")
+    List<HouseRoomCountProjection> countRoomsByHouseIds(@Param("houseIds") Collection<Long> houseIds);
+
+    @Query("SELECT r.houseId AS houseId, COUNT(r) AS roomCount FROM Room r "
+            + "WHERE r.houseId IN :houseIds AND r.status = :status GROUP BY r.houseId")
+    List<HouseRoomCountProjection> countRoomsByHouseIdsAndStatus(
+            @Param("houseIds") Collection<Long> houseIds,
+            @Param("status") RoomStatus status);
 
     long countByHouseIdIn(Collection<Long> houseIds);
 

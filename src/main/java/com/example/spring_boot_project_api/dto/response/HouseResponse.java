@@ -37,4 +37,41 @@ public record HouseResponse(
         LocalDateTime updatedAt,
         String primaryImage
 ) {
+
+    /**
+     * Returns a copy of this response with the room counts replaced by the
+     * values derived from the actual {@code rooms} records of the house.
+     * {@code totalRooms}/{@code availableRooms} are read-only, calculated
+     * values and are never taken from user input.
+     */
+    public HouseResponse withRoomCounts(Integer totalRooms, Integer availableRooms) {
+        return new HouseResponse(
+                id,
+                ownerId,
+                name,
+                slug,
+                code,
+                address,
+                postalCode,
+                latitude,
+                longitude,
+                cityProvince,
+                googleMapsUrl,
+                totalRooms,
+                availableRooms,
+                description,
+                status,
+                propertyType,
+                furnishing,
+                availableFrom,
+                advancePayment,
+                bedrooms,
+                bathrooms,
+                areaSqm,
+                landSizeSqm,
+                numberOfFloors,
+                createdAt,
+                updatedAt,
+                primaryImage);
+    }
 }

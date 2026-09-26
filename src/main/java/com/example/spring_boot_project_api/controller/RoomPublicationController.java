@@ -16,6 +16,7 @@ import com.example.spring_boot_project_api.dto.request.RejectRoomRequest;
 import com.example.spring_boot_project_api.dto.response.PageResponse;
 import com.example.spring_boot_project_api.dto.response.RoomResponse;
 import com.example.spring_boot_project_api.enums.RoomPublicationStatus;
+import com.example.spring_boot_project_api.enums.RoomStatus;
 import com.example.spring_boot_project_api.mapper.RoomMapper;
 import com.example.spring_boot_project_api.model.Room;
 import com.example.spring_boot_project_api.service.RoomPublicationService;
@@ -88,13 +89,16 @@ public class RoomPublicationController {
 
     @Operation(summary = "List rooms for review (SUPER_ADMIN only)",
             description = "Paginated listing of rooms for the review workflow. When the status query "
-                    + "parameter is omitted every room is returned regardless of publication status.")
+                    + "parameter is omitted every room is returned regardless of publication status. "
+                    + "An optional roomStatus parameter filters by the room availability status "
+                    + "independent of the publication status (e.g. PUBLISHED + OCCUPIED is valid).")
     @GetMapping("/api/admin/rooms/publication")
     public ResponseEntity<PageResponse<RoomResponse>> listRoomsForReview(
             @RequestParam(required = false) RoomPublicationStatus status,
+            @RequestParam(required = false) RoomStatus roomStatus,
             @PageableDefault(size = 10) Pageable pageable) {
         return ResponseEntity.ok(
-                toPage(roomPublicationService.getRoomsForReview(status, pageable)));
+                toPage(roomPublicationService.getRoomsForReview(status, roomStatus, pageable)));
     }
 
     private PageResponse<RoomResponse> toPage(Page<Room> page) {

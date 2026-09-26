@@ -22,7 +22,7 @@ import lombok.RequiredArgsConstructor;
 @RestController
 @RequestMapping("/api/v1/settings/theme")
 @RequiredArgsConstructor
-@Tag(name = "Theme Settings", description = "Organization system theme (appearance). Modifications are OWNER-only.")
+@Tag(name = "Theme Settings", description = "System theme (appearance) shared by the owner and the super admin. Modifications are OWNER or SUPER_ADMIN only.")
 public class ThemeController {
 
     private final OwnerSettingService ownerSettingService;
@@ -34,24 +34,29 @@ public class ThemeController {
         return ResponseEntity.ok(ownerSettingService.getTheme());
     }
 
-    @Operation(summary = "Update the organization theme (OWNER only)")
+    @Operation(summary = "Update the system theme (OWNER or SUPER_ADMIN)")
     @PutMapping
     public ResponseEntity<ThemeSettingsResponse> updateTheme(
             @Valid @RequestBody UpdateThemeRequest request) {
-        requireOwner();
+        requireThemeEditor();
         return ResponseEntity.ok(ownerSettingService.updateTheme(request));
     }
 
-    @Operation(summary = "Reset the organization theme to defaults (OWNER only)")
+    @Operation(summary = "Reset the system theme to defaults (OWNER or SUPER_ADMIN)")
     @PostMapping("/reset")
     public ResponseEntity<ThemeSettingsResponse> resetTheme() {
-        requireOwner();
+        requireThemeEditor();
         return ResponseEntity.ok(ownerSettingService.resetTheme());
     }
 
-    private void requireOwner() {
-        if (!securityUtils.hasRole(SecurityUtils.ROLE_OWNER)) {
-            throw new AccessDeniedException("Only owners can modify the theme");
+    /**
+     * The system theme is a single shared value, so both the owner and the super
+     * admin may edit it. MANAGER and TENANT stay read-only.
+     */
+    private void requireThemeEditor() {
+        if (!securityUtils.hasRole(SecurityUtils.ROLE_OWNER)
+                && !securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)) {
+            throw new AccessDeniedException("Only owners and super admins can modify the theme");
         }
     }
 }

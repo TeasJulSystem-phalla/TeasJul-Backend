@@ -1,6 +1,7 @@
 package com.example.spring_boot_project_api.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -8,34 +9,22 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
-import org.springframework.http.HttpEntity;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import com.example.spring_boot_project_api.config.TelegramBotConfig;
-import com.example.spring_boot_project_api.model.ContractTenant;
-import com.example.spring_boot_project_api.model.House;
-import com.example.spring_boot_project_api.model.Invoice;
+import com.example.spring_boot_project_api.enums.NotificationType;
 import com.example.spring_boot_project_api.model.Payment;
-import com.example.spring_boot_project_api.model.PaymentMethod;
-import com.example.spring_boot_project_api.model.RentalContract;
-import com.example.spring_boot_project_api.model.Room;
-import com.example.spring_boot_project_api.model.Tenant;
 import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.repository.ContractTenantRepository;
 import com.example.spring_boot_project_api.repository.HouseRepository;
@@ -49,6 +38,9 @@ import com.example.spring_boot_project_api.service.impl.TelegramServiceImpl;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class TelegramServiceImplTest {
 
+    private static final String BOT_TOKEN = "123456789:AAFakeTokenForTestsOnly_doNotUse";
+    private static final String CHAT_ID = "-1001234567890";
+
     @Mock private RestTemplate restTemplate;
     @Mock private TelegramBotConfig telegramBotConfig;
     @Mock private OwnerSettingService ownerSettingService;
@@ -58,163 +50,140 @@ class TelegramServiceImplTest {
     @Mock private HouseRepository houseRepository;
     @Mock private ContractTenantRepository contractTenantRepository;
     @Mock private TenantRepository tenantRepository;
+    @Mock private SystemSettingService systemSettingService;
 
-    @InjectMocks private TelegramServiceImpl telegramService;
-
-    private User owner;
-    private Payment payment;
+    private TelegramServiceImpl telegramService;
 
     @BeforeEach
     void setUp() {
-        owner = User.builder().id(1L).username("owner1").email("owner@test.com").build();
+        telegramService = new TelegramServiceImpl(
+                restTemplate, telegramBotConfig, ownerSettingService, invoiceRepository,
+                rentalContractRepository, roomRepository, houseRepository,
+                contractTenantRepository, tenantRepository, systemSettingService);
+    }
 
-        House house = House.builder().id(5L).name("lanh phallla").build();
-        Room room = new Room();
-        room.setId(7L);
-        room.setHouseId(5L);
-        room.setRoomNumber("A1");
-        RentalContract contract = RentalContract.builder()
-                .id(100L)
-                .roomId(7L)
-                .contractNo("CT-2026-001")
-                .build();
-        Invoice invoice = Invoice.builder()
-                .id(10L)
-                .owner(owner)
-                .invoiceNo("INV-2026-0001")
-                .contractId(100L)
-                .totalAmount(new BigDecimal("250.00"))
-                .build();
-        Tenant tenant = Tenant.builder()
-                .id(20L)
-                .firstName("Sok")
-                .lastName("Dara")
-                .build();
-        ContractTenant link = ContractTenant.builder()
-                .id(1L)
-                .contractId(100L)
-                .tenantId(20L)
-                .isPrimary(true)
-                .joinedAt(LocalDate.of(2026, 1, 1))
-                .build();
-        PaymentMethod method = PaymentMethod.builder().id(3L).name("ABA KHQR").build();
+    private TelegramService.PropertySubmission submission() {
+        return new TelegramService.PropertySubmission(
+                "ROOM#77", "Room / House", "Modern Room", "Sok Owner", "PENDING_APPROVAL",
+                LocalDateTime.of(2026, 1, 15, 10, 30));
+    }
 
-        payment = Payment.builder()
-                .id(300L)
-                .owner(owner)
-                .invoiceId(10L)
-                .paymentNo("PAY-20260909-000001")
-                .transactionId("PAY20260909000001")
-                .amount(new BigDecimal("250.00"))
-                .currency("USD")
-                .exchangeRate(new BigDecimal("4100"))
-                .exchangeRateTo("KHR")
-                .paymentMethod(method)
-                .paidAt(LocalDateTime.of(2026, 9, 9, 14, 30))
-                .build();
+    private void allowEverything() {
+        when(systemSettingService.isTelegramNotificationEnabledFor(NotificationType.PROPERTY_SUBMITTED))
+                .thenReturn(true);
+        when(systemSettingService.getSuperAdminTelegramSettingsValues())
+                .thenReturn(new SuperAdminTelegramSettings(true, BOT_TOKEN, CHAT_ID));
+    }
 
-        when(invoiceRepository.findById(10L)).thenReturn(Optional.of(invoice));
-        when(rentalContractRepository.findById(100L)).thenReturn(Optional.of(contract));
-        when(roomRepository.findById(7L)).thenReturn(Optional.of(room));
-        when(houseRepository.findById(5L)).thenReturn(Optional.of(house));
-        when(contractTenantRepository.findByContractId(100L)).thenReturn(List.of(link));
-        when(tenantRepository.findById(20L)).thenReturn(Optional.of(tenant));
+    private String capturedUrl() {
+        ArgumentCaptor<String> url = ArgumentCaptor.forClass(String.class);
+        verify(restTemplate).postForEntity(url.capture(), any(), eq(String.class));
+        return url.getValue();
     }
 
     @Test
-    void sendPaymentSuccess_skipsWhenNoCredentialsConfigured() {
-        when(ownerSettingService.getTelegramBotToken(any())).thenReturn("");
-        when(ownerSettingService.getTelegramChatId(any())).thenReturn("");
-        when(telegramBotConfig.getBotToken()).thenReturn("");
-        when(telegramBotConfig.getChatId()).thenReturn("");
+    void propertySubmitted_sendsMessageToSuperAdminDestination() {
+        allowEverything();
 
-        telegramService.sendPaymentSuccess(payment);
+        telegramService.sendPropertySubmittedToSuperAdmin(submission());
+
+        assertThat(capturedUrl()).contains("/sendMessage");
+        verify(restTemplate).postForEntity(anyString(), any(), eq(String.class));
+    }
+
+    @Test
+    void propertySubmitted_doesNotSendWhenNotificationSettingsDisabled() {
+        when(systemSettingService.isTelegramNotificationEnabledFor(NotificationType.PROPERTY_SUBMITTED))
+                .thenReturn(false);
+
+        telegramService.sendPropertySubmittedToSuperAdmin(submission());
 
         verify(restTemplate, never()).postForEntity(anyString(), any(), eq(String.class));
     }
 
     @Test
-    void sendPaymentSuccess_fromSettingsCredentials() {
-        when(ownerSettingService.getTelegramBotToken(any())).thenReturn("SETTINGS_TOKEN");
-        when(ownerSettingService.getTelegramChatId(any())).thenReturn("123456");
+    void propertySubmitted_doesNotSendWhenTelegramChannelDisabled() {
+        when(systemSettingService.isTelegramNotificationEnabledFor(NotificationType.PROPERTY_SUBMITTED))
+                .thenReturn(false);
 
-        telegramService.sendPaymentSuccess(payment);
+        telegramService.sendPropertySubmittedToSuperAdmin(submission());
 
-        ArgumentCaptor<HttpEntity<Map<String, String>>> entityCaptor = ArgumentCaptor.forClass(HttpEntity.class);
-        verify(restTemplate).postForEntity(
-                eq("https://api.telegram.org/botSETTINGS_TOKEN/sendMessage"),
-                entityCaptor.capture(),
-                eq(String.class));
-
-        Map<String, String> body = entityCaptor.getValue().getBody();
-        assertThat(body).containsEntry("chat_id", "123456");
-        String text = (String) body.get("text");
-        assertThat(text)
-                .contains("Payment successful")
-                .contains("Invoice: INV-2026-0001")
-                .contains("Tenant: Sok Dara")
-                .contains("House: lanh phallla (Room A1)")
-                .contains("Amount: $250.00 (1025000 KHR)")
-                .contains("Method: ABA KHQR")
-                .contains("Ref: PAY-20260909-000001")
-                .contains("Time: 09/09/2026 14:30");
+        verify(systemSettingService).isTelegramNotificationEnabledFor(NotificationType.PROPERTY_SUBMITTED);
+        verify(restTemplate, never()).postForEntity(anyString(), any(), eq(String.class));
     }
 
     @Test
-    void sendPaymentSuccess_fallsBackToEnvironmentConfig() {
-        when(ownerSettingService.getTelegramBotToken(any())).thenReturn("");
-        when(ownerSettingService.getTelegramChatId(any())).thenReturn("");
-        when(telegramBotConfig.getBotToken()).thenReturn("ENV_TOKEN");
-        when(telegramBotConfig.getChatId()).thenReturn("-999");
+    void propertySubmitted_doesNotSendWhenSuperAdminTelegramDisabled() {
+        when(systemSettingService.isTelegramNotificationEnabledFor(NotificationType.PROPERTY_SUBMITTED))
+                .thenReturn(true);
+        when(systemSettingService.getSuperAdminTelegramSettingsValues())
+                .thenReturn(new SuperAdminTelegramSettings(false, BOT_TOKEN, CHAT_ID));
 
-        telegramService.sendPaymentSuccess(payment);
+        telegramService.sendPropertySubmittedToSuperAdmin(submission());
 
-        verify(restTemplate).postForEntity(
-                eq("https://api.telegram.org/botENV_TOKEN/sendMessage"),
-                any(HttpEntity.class),
-                eq(String.class));
+        verify(restTemplate, never()).postForEntity(anyString(), any(), eq(String.class));
     }
 
     @Test
-    void sendPaymentCreated_sendsInitiatedMessage() {
-        when(ownerSettingService.getTelegramBotToken(any())).thenReturn("TOKEN");
-        when(ownerSettingService.getTelegramChatId(any())).thenReturn("123456");
+    void propertySubmitted_doesNotSendWhenNotConfigured() {
+        when(systemSettingService.isTelegramNotificationEnabledFor(NotificationType.PROPERTY_SUBMITTED))
+                .thenReturn(true);
+        when(systemSettingService.getSuperAdminTelegramSettingsValues())
+                .thenReturn(SuperAdminTelegramSettings.DISABLED);
+
+        telegramService.sendPropertySubmittedToSuperAdmin(submission());
+
+        verify(restTemplate, never()).postForEntity(anyString(), any(), eq(String.class));
+    }
+
+    @Test
+    void propertySubmitted_neverFallsBackToOwnerOrEnvironmentCredentials() {
+        allowEverything();
+
+        telegramService.sendPropertySubmittedToSuperAdmin(submission());
+
+        // The owner credential lookup and the telegram.bot-token fallback belong
+        // to the payment path only; the super admin destination is used as-is.
+        verify(ownerSettingService, never()).getTelegramBotToken(any());
+        verify(ownerSettingService, never()).getTelegramChatId(any());
+    }
+
+    @Test
+    void propertySubmitted_telegramFailureIsSwallowed() {
+        allowEverything();
+        when(restTemplate.postForEntity(anyString(), any(), eq(String.class)))
+                .thenThrow(new RestClientException("POST https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage failed"));
+
+        assertThatCode(() -> telegramService.sendPropertySubmittedToSuperAdmin(submission()))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void propertySubmitted_ignoresNullSubmission() {
+        assertThatCode(() -> telegramService.sendPropertySubmittedToSuperAdmin(null))
+                .doesNotThrowAnyException();
+
+        verify(restTemplate, never()).postForEntity(anyString(), any(), eq(String.class));
+    }
+
+    @Test
+    void paymentCreated_keepsUsingOwnerCredentials() {
+        // Regression guard: the owner payment path must keep resolving the owner
+        // destination and must not be redirected to the super admin settings.
+        when(systemSettingService.isTelegramNotificationEnabled()).thenReturn(true);
+        when(ownerSettingService.getTelegramBotToken(9L)).thenReturn(BOT_TOKEN);
+        when(ownerSettingService.getTelegramChatId(9L)).thenReturn(CHAT_ID);
+        Payment payment = Payment.builder()
+                .id(3L)
+                .amount(new java.math.BigDecimal("10.00"))
+                .owner(User.builder().id(9L).build())
+                .build();
 
         telegramService.sendPaymentCreated(payment);
 
-        ArgumentCaptor<HttpEntity<Map<String, String>>> entityCaptor = ArgumentCaptor.forClass(HttpEntity.class);
-        verify(restTemplate).postForEntity(
-                eq("https://api.telegram.org/botTOKEN/sendMessage"),
-                entityCaptor.capture(),
-                eq(String.class));
-
-        String text = entityCaptor.getValue().getBody().get("text");
-        assertThat(text)
-                .contains("New payment initiated")
-                .contains("Invoice: INV-2026-0001")
-                .contains("Ref: PAY-20260909-000001")
-                .doesNotContain("Payment successful");
-    }
-
-    @Test
-    void sendPaymentSuccess_doesNotFailOnMissingInvoiceDetails() {
-        when(ownerSettingService.getTelegramBotToken(any())).thenReturn("TOKEN");
-        when(ownerSettingService.getTelegramChatId(any())).thenReturn("123456");
-        when(invoiceRepository.findById(10L)).thenReturn(Optional.empty());
-
-        telegramService.sendPaymentSuccess(payment);
-
-        ArgumentCaptor<HttpEntity<Map<String, String>>> entityCaptor = ArgumentCaptor.forClass(HttpEntity.class);
-        verify(restTemplate).postForEntity(
-                eq("https://api.telegram.org/botTOKEN/sendMessage"),
-                entityCaptor.capture(),
-                eq(String.class));
-
-        String text = entityCaptor.getValue().getBody().get("text");
-        assertThat(text)
-                .contains("Payment successful")
-                .contains("Amount: $250.00 (1025000 KHR)")
-                .contains("Method: ABA KHQR")
-                .contains("Ref: PAY-20260909-000001");
+        verify(ownerSettingService).getTelegramBotToken(9L);
+        verify(ownerSettingService).getTelegramChatId(9L);
+        verify(restTemplate).postForEntity(anyString(), any(), eq(String.class));
+        verify(systemSettingService, never()).getSuperAdminTelegramSettingsValues();
     }
 }

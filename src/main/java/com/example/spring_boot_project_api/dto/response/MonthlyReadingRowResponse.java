@@ -8,13 +8,22 @@ import java.time.LocalDate;
  * frontend; the previous reading is taken from the last reading before the
  * billing month and the current reading is the value recorded inside the month
  * (or null when the cell still needs to be filled in).
+ *
+ * <p>House, floor and tenant fields are room-level context repeated on every
+ * meter row of the room so the frontend can group/sort cards and run quick
+ * search without extra requests.</p>
  */
 public record MonthlyReadingRowResponse(
         Long roomId,
         String roomNumber,
+        Integer floorNumber,
+        Long houseId,
+        String houseName,
+        String tenantName,
         Long meterId,
         String meterNumber,
         Long utilityTypeId,
+        String utilityTypeCode,
         String utilityTypeName,
         String utilityTypeUnit,
         Long readingId,

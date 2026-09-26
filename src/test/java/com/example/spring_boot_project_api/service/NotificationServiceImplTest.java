@@ -1,6 +1,7 @@
 package com.example.spring_boot_project_api.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -20,6 +21,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -33,6 +36,7 @@ import com.example.spring_boot_project_api.exception.NotificationNotFoundExcepti
 import com.example.spring_boot_project_api.mapper.NotificationMapper;
 import com.example.spring_boot_project_api.model.ContractTenant;
 import com.example.spring_boot_project_api.model.Invoice;
+import com.example.spring_boot_project_api.model.Listing;
 import com.example.spring_boot_project_api.model.Notification;
 import com.example.spring_boot_project_api.model.Payment;
 import com.example.spring_boot_project_api.model.RentalContract;
@@ -52,6 +56,7 @@ import com.example.spring_boot_project_api.service.impl.NotificationServiceImpl;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class NotificationServiceImplTest {
 
     @Mock private NotificationRepository notificationRepository;
@@ -66,6 +71,8 @@ class NotificationServiceImplTest {
     @Mock private InvoiceRepository invoiceRepository;
     @Mock private UserHouseAccessRepository userHouseAccessRepository;
     @Mock private jakarta.persistence.EntityManager entityManager;
+    @Mock private SystemSettingService systemSettingService;
+    @Mock private TelegramService telegramService;
 
     @InjectMocks private NotificationServiceImpl notificationService;
 
@@ -76,6 +83,7 @@ class NotificationServiceImplTest {
         me = User.builder().id(1L).username("me").passwordHash("h").build();
         org.springframework.test.util.ReflectionTestUtils.setField(
                 notificationService, "entityManager", entityManager);
+        when(systemSettingService.isNotificationTypeEnabled(any())).thenReturn(true);
     }
 
     private Notification notificationOf(Long id, User owner) {
@@ -291,5 +299,106 @@ class NotificationServiceImplTest {
                 notificationService.notifyPropertySubmitted(room);
 
                 verify(notificationRepository, never()).saveAndFlush(any(Notification.class));
+        }
+
+        @Test
+        void notifyPropertySubmitted_skipsWhenDisabledInSystemSettings() {
+                User superAdmin = User.builder().id(9L).build();
+                Room room = new Room();
+                room.setId(77L);
+                when(userRoleRepository.findUsersByRoleCode(SecurityUtils.ROLE_SUPER_ADMIN))
+                                .thenReturn(List.of(superAdmin));
+                when(userRepository.findById(9L)).thenReturn(Optional.of(superAdmin));
+                when(systemSettingService.isNotificationTypeEnabled(NotificationType.PROPERTY_SUBMITTED)).thenReturn(false);
+
+                notificationService.notifyPropertySubmitted(room);
+
+                verify(notificationRepository, never()).saveAndFlush(any(Notification.class));
+        }
+
+        // --- Super admin Telegram delivery on the existing PROPERTY_SUBMITTED hook ---
+
+        @Test
+        void notifyPropertySubmitted_sendsTelegramToSuperAdminForRoom() {
+                User superAdmin = User.builder().id(9L).firstName("Sok").lastName("Owner").build();
+                Room room = new Room();
+                room.setId(77L);
+                room.setName("Modern Room");
+                room.setOwnerId(4L);
+                when(userRoleRepository.findUsersByRoleCode(SecurityUtils.ROLE_SUPER_ADMIN))
+                                .thenReturn(List.of(superAdmin));
+                when(userRepository.findById(any())).thenReturn(Optional.of(superAdmin));
+
+                notificationService.notifyPropertySubmitted(room);
+
+                ArgumentCaptor<TelegramService.PropertySubmission> captor =
+                                ArgumentCaptor.forClass(TelegramService.PropertySubmission.class);
+                verify(telegramService).sendPropertySubmittedToSuperAdmin(captor.capture());
+                assertThat(captor.getValue().reference()).isEqualTo("ROOM#77");
+                assertThat(captor.getValue().propertyName()).isEqualTo("Modern Room");
+                assertThat(captor.getValue().ownerName()).isEqualTo("Sok Owner");
+        }
+
+        @Test
+        void notifyPropertySubmitted_sendsTelegramToSuperAdminForListing() {
+                User superAdmin = User.builder().id(9L).build();
+                Listing listing = new Listing();
+                listing.setId(12L);
+                listing.setTitle("Borey for rent");
+                listing.setOwnerId(4L);
+                when(userRoleRepository.findUsersByRoleCode(SecurityUtils.ROLE_SUPER_ADMIN))
+                                .thenReturn(List.of(superAdmin));
+                when(userRepository.findById(any())).thenReturn(Optional.of(superAdmin));
+
+                notificationService.notifyPropertySubmitted(listing);
+
+                ArgumentCaptor<TelegramService.PropertySubmission> captor =
+                                ArgumentCaptor.forClass(TelegramService.PropertySubmission.class);
+                verify(telegramService).sendPropertySubmittedToSuperAdmin(captor.capture());
+                assertThat(captor.getValue().reference()).isEqualTo("PROPERTY#12");
+                assertThat(captor.getValue().propertyName()).isEqualTo("Borey for rent");
+        }
+
+        @Test
+        void notifyPropertySubmitted_telegramFailureDoesNotBreakTheInAppNotification() {
+                User superAdmin = User.builder().id(9L).build();
+                Room room = new Room();
+                room.setId(77L);
+                when(userRoleRepository.findUsersByRoleCode(SecurityUtils.ROLE_SUPER_ADMIN))
+                                .thenReturn(List.of(superAdmin));
+                when(userRepository.findById(any())).thenReturn(Optional.of(superAdmin));
+                org.mockito.Mockito.doThrow(new IllegalStateException("telegram down"))
+                                .when(telegramService).sendPropertySubmittedToSuperAdmin(any());
+
+                assertThatCode(() -> notificationService.notifyPropertySubmitted(room))
+                                .doesNotThrowAnyException();
+
+                // The in-app notification is still created and persisted.
+                verify(notificationRepository).saveAndFlush(any(Notification.class));
+        }
+
+        @Test
+        void notifyPropertySubmitted_doesNotSendTelegramForAnUnsavedEntity() {
+                notificationService.notifyPropertySubmitted((Room) null);
+
+                verify(telegramService, never()).sendPropertySubmittedToSuperAdmin(any());
+        }
+
+        @Test
+        void notifyPropertySubmitted_sendsTelegramEvenWhenInAppChannelIsOff() {
+                // The two channels are independent apart from the shared system and
+                // per-event switches, so an in-app-only outage must not mute Telegram.
+                User superAdmin = User.builder().id(9L).build();
+                Room room = new Room();
+                room.setId(77L);
+                when(userRoleRepository.findUsersByRoleCode(SecurityUtils.ROLE_SUPER_ADMIN))
+                                .thenReturn(List.of(superAdmin));
+                when(userRepository.findById(any())).thenReturn(Optional.of(superAdmin));
+                when(systemSettingService.isNotificationTypeEnabled(NotificationType.PROPERTY_SUBMITTED)).thenReturn(false);
+
+                notificationService.notifyPropertySubmitted(room);
+
+                verify(notificationRepository, never()).saveAndFlush(any(Notification.class));
+                verify(telegramService).sendPropertySubmittedToSuperAdmin(any());
         }
 }

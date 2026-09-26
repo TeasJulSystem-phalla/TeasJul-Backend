@@ -23,6 +23,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageImpl;
 
@@ -319,35 +320,111 @@ class RoomPublicationServiceImplTest {
     // ---------- getRoomsForReview ----------
 
     @Test
-    void getRoomsForReview_asAdmin_withoutStatus_returnsAllRooms() {
+    void getRoomsForReview_asAdmin_withoutFilters_returnsAllRooms() {
         adminRole();
         PageImpl<Room> page = new PageImpl<>(List.of(room(20L, RoomPublicationStatus.DRAFT)));
-        when(roomRepository.findAll(any(Pageable.class))).thenReturn(page);
+        when(roomRepository.findRoomsForReview(eq(null), eq(null), any(Pageable.class)))
+                .thenReturn(page);
 
-        assertThat(service.getRoomsForReview(null, anyPageable()).getContent())
+        assertThat(service.getRoomsForReview(null, null, anyPageable()).getContent())
                 .hasSize(1);
-        verify(roomRepository).findAll(any(Pageable.class));
+        verify(roomRepository).findRoomsForReview(eq(null), eq(null), any(Pageable.class));
     }
 
     @Test
-    void getRoomsForReview_asAdmin_withStatus_returnsFiltered() {
+    void getRoomsForReview_asAdmin_withPublicationStatus_returnsFiltered() {
         adminRole();
         PageImpl<Room> page = new PageImpl<>(List.of(room(20L, RoomPublicationStatus.PENDING_APPROVAL)));
-        when(roomRepository.findByPublicationStatus(
-                eq(RoomPublicationStatus.PENDING_APPROVAL), any(Pageable.class))).thenReturn(page);
+        when(roomRepository.findRoomsForReview(
+                eq(RoomPublicationStatus.PENDING_APPROVAL), eq(null), any(Pageable.class)))
+                .thenReturn(page);
 
-        assertThat(service.getRoomsForReview(RoomPublicationStatus.PENDING_APPROVAL, anyPageable()).getContent())
+        assertThat(service.getRoomsForReview(
+                RoomPublicationStatus.PENDING_APPROVAL, null, anyPageable()).getContent())
                 .hasSize(1);
-        verify(roomRepository).findByPublicationStatus(
-                eq(RoomPublicationStatus.PENDING_APPROVAL), any(Pageable.class));
+        verify(roomRepository).findRoomsForReview(
+                eq(RoomPublicationStatus.PENDING_APPROVAL), eq(null), any(Pageable.class));
+    }
+
+    @Test
+    void getRoomsForReview_asAdmin_publishedAndAvailable_returnsPublishedAvailable() {
+        adminRole();
+        PageImpl<Room> page = new PageImpl<>(List.of(room(20L, RoomPublicationStatus.PUBLISHED)));
+        when(roomRepository.findRoomsForReview(
+                eq(RoomPublicationStatus.PUBLISHED), eq(RoomStatus.AVAILABLE), any(Pageable.class)))
+                .thenReturn(page);
+
+        Page<Room> result = service.getRoomsForReview(
+                RoomPublicationStatus.PUBLISHED, RoomStatus.AVAILABLE, anyPageable());
+
+        assertThat(result.getContent()).hasSize(1);
+        verify(roomRepository).findRoomsForReview(
+                eq(RoomPublicationStatus.PUBLISHED), eq(RoomStatus.AVAILABLE), any(Pageable.class));
+    }
+
+    @Test
+    void getRoomsForReview_asAdmin_publishedAndOccupied_isIndependentOfPublication() {
+        adminRole();
+        Room occupied = room(20L, RoomPublicationStatus.PUBLISHED);
+        occupied.setStatus(RoomStatus.OCCUPIED);
+        PageImpl<Room> page = new PageImpl<>(List.of(occupied));
+        when(roomRepository.findRoomsForReview(
+                eq(RoomPublicationStatus.PUBLISHED), eq(RoomStatus.OCCUPIED), any(Pageable.class)))
+                .thenReturn(page);
+
+        Page<Room> result = service.getRoomsForReview(
+                RoomPublicationStatus.PUBLISHED, RoomStatus.OCCUPIED, anyPageable());
+
+        assertThat(result.getContent())
+                .hasSize(1)
+                .first()
+                .extracting(Room::getStatus)
+                .isEqualTo(RoomStatus.OCCUPIED);
+        verify(roomRepository).findRoomsForReview(
+                eq(RoomPublicationStatus.PUBLISHED), eq(RoomStatus.OCCUPIED), any(Pageable.class));
+    }
+
+    @Test
+    void getRoomsForReview_asAdmin_publishedAndMaintenance_returnsFiltered() {
+        adminRole();
+        Room maintenance = room(20L, RoomPublicationStatus.PUBLISHED);
+        maintenance.setStatus(RoomStatus.MAINTENANCE);
+        PageImpl<Room> page = new PageImpl<>(List.of(maintenance));
+        when(roomRepository.findRoomsForReview(
+                eq(RoomPublicationStatus.PUBLISHED), eq(RoomStatus.MAINTENANCE), any(Pageable.class)))
+                .thenReturn(page);
+
+        Page<Room> result = service.getRoomsForReview(
+                RoomPublicationStatus.PUBLISHED, RoomStatus.MAINTENANCE, anyPageable());
+
+        assertThat(result.getContent())
+                .hasSize(1)
+                .first()
+                .extracting(Room::getStatus)
+                .isEqualTo(RoomStatus.MAINTENANCE);
+        verify(roomRepository).findRoomsForReview(
+                eq(RoomPublicationStatus.PUBLISHED), eq(RoomStatus.MAINTENANCE), any(Pageable.class));
+    }
+
+    @Test
+    void getRoomsForReview_asAdmin_roomStatusOnly_filtersAcrossAllPublications() {
+        adminRole();
+        PageImpl<Room> page = new PageImpl<>(List.of(room(20L, RoomPublicationStatus.DRAFT)));
+        when(roomRepository.findRoomsForReview(eq(null), eq(RoomStatus.AVAILABLE), any(Pageable.class)))
+                .thenReturn(page);
+
+        assertThat(service.getRoomsForReview(null, RoomStatus.AVAILABLE, anyPageable()).getContent())
+                .hasSize(1);
+        verify(roomRepository).findRoomsForReview(
+                eq(null), eq(RoomStatus.AVAILABLE), any(Pageable.class));
     }
 
     @Test
     void getRoomsForReview_whenNotAdmin_throws() {
         when(securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(false);
 
-        assertThatThrownBy(() -> service.getRoomsForReview(null, anyPageable()))
+        assertThatThrownBy(() -> service.getRoomsForReview(null, null, anyPageable()))
                 .isInstanceOf(RuntimeException.class);
-        verify(roomRepository, never()).findAll(any(Pageable.class));
+        verify(roomRepository, never()).findRoomsForReview(any(), any(), any(Pageable.class));
     }
 }

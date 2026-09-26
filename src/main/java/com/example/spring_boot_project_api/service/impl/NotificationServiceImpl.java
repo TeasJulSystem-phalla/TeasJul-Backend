@@ -45,6 +45,7 @@ import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.repository.UserRoleRepository;
 import com.example.spring_boot_project_api.service.NotificationService;
+import com.example.spring_boot_project_api.service.TelegramService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import jakarta.persistence.EntityManager;
@@ -86,6 +87,8 @@ public class NotificationServiceImpl implements NotificationService {
     private final RoomRepository roomRepository;
     private final InvoiceRepository invoiceRepository;
     private final UserHouseAccessRepository userHouseAccessRepository;
+    private final com.example.spring_boot_project_api.service.SystemSettingService systemSettingService;
+    private final TelegramService telegramService;
 
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -106,8 +109,15 @@ public class NotificationServiceImpl implements NotificationService {
                     "referenceId", room.getId());
             persistToAll(userIdsByRole(SecurityUtils.ROLE_SUPER_ADMIN),
                     NotificationType.PROPERTY_SUBMITTED, title, message, data);
+            notifySuperAdminTelegram(new TelegramService.PropertySubmission(
+                    "ROOM#" + room.getId(),
+                    "Room / House",
+                    roomLabel,
+                    ownerName(room.getOwnerId() != null ? room.getOwnerId() : room.getSubmittedBy()),
+                    room.getPublicationStatus() != null ? room.getPublicationStatus().name() : null,
+                    room.getSubmittedAt()));
         } catch (RuntimeException e) {
-            log.warn("Failed to create property-submitted notification: {}", e.getMessage());
+            log.warn("Failed to create property-submitted notification: {}", e.getClass().getSimpleName());
         }
     }
 
@@ -127,8 +137,50 @@ public class NotificationServiceImpl implements NotificationService {
                     "referenceId", listing.getId());
             persistToAll(userIdsByRole(SecurityUtils.ROLE_SUPER_ADMIN),
                     NotificationType.PROPERTY_SUBMITTED, title, message, data);
+            notifySuperAdminTelegram(new TelegramService.PropertySubmission(
+                    "PROPERTY#" + listing.getId(),
+                    "Property",
+                    listing.getTitle(),
+                    ownerName(listing.getOwnerId() != null ? listing.getOwnerId() : listing.getSubmittedBy()),
+                    listing.getPublicationStatus() != null ? listing.getPublicationStatus().name() : null,
+                    listing.getSubmittedAt()));
         } catch (RuntimeException e) {
-            log.warn("Failed to create property-submitted notification: {}", e.getMessage());
+            log.warn("Failed to create property-submitted notification: {}", e.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * Sends the same PROPERTY_SUBMITTED event to the SUPER_ADMIN Telegram
+     * destination. The existing event hook is the single dispatch point: this
+     * adds a channel, not a second event. Isolated in its own try/catch so a
+     * Telegram outage can never break the in-app notification or the submission
+     * transaction that triggered it.
+     */
+    private void notifySuperAdminTelegram(TelegramService.PropertySubmission submission) {
+        try {
+            telegramService.sendPropertySubmittedToSuperAdmin(submission);
+        } catch (RuntimeException e) {
+            log.warn("Failed to send property-submitted Telegram notification: {}",
+                    e.getClass().getSimpleName());
+        }
+    }
+
+    /** Best-effort owner display name for the Telegram message. */
+    private String ownerName(Long ownerUserId) {
+        if (ownerUserId == null) {
+            return null;
+        }
+        try {
+            return userRepository.findById(ownerUserId)
+                    .map(user -> {
+                        String name = (user.getFirstName() != null ? user.getFirstName() : "")
+                                + (user.getLastName() != null ? " " + user.getLastName() : "");
+                        name = name.trim();
+                        return name.isEmpty() ? user.getUsername() : name;
+                    })
+                    .orElse(null);
+        } catch (RuntimeException e) {
+            return null;
         }
     }
 
@@ -423,6 +475,10 @@ public class NotificationServiceImpl implements NotificationService {
     private void persist(Long userId, NotificationType type, String title,
             String message, Map<String, Object> data) {
         if (userId == null) {
+            return;
+        }
+        if (systemSettingService != null && !systemSettingService.isNotificationTypeEnabled(type)) {
+            log.debug("Notification type {} is disabled by system settings; skipping for user {}", type, userId);
             return;
         }
         userRepository.findById(userId).ifPresent(user -> {

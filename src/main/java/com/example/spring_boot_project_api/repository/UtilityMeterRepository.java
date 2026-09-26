@@ -1,5 +1,6 @@
 package com.example.spring_boot_project_api.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -17,11 +18,15 @@ public interface UtilityMeterRepository
 
     List<UtilityMeter> findByHouseId(Long houseId);
 
+    List<UtilityMeter> findByHouseIdIn(Collection<Long> houseIds);
+
     List<UtilityMeter> findByRoomId(Long roomId);
 
-    boolean existsByMeterNumber(String meterNumber);
+    boolean existsByOwnerIdAndUtilityTypeIdAndMeterNumber(
+            Long ownerId, Long utilityTypeId, String meterNumber);
 
-    boolean existsByMeterNumberAndIdNot(String meterNumber, Long id);
+    boolean existsByOwnerIdAndUtilityTypeIdAndMeterNumberAndIdNot(
+            Long ownerId, Long utilityTypeId, String meterNumber, Long id);
 
     List<UtilityMeter> findByRoomIdAndUtilityTypeId(Long roomId, Long utilityTypeId);
 }

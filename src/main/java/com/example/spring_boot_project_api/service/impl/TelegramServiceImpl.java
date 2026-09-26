@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import com.example.spring_boot_project_api.config.TelegramBotConfig;
+import com.example.spring_boot_project_api.enums.NotificationType;
 import com.example.spring_boot_project_api.model.ContractTenant;
 import com.example.spring_boot_project_api.model.House;
 import com.example.spring_boot_project_api.model.Invoice;
@@ -30,6 +31,7 @@ import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.TenantRepository;
 import com.example.spring_boot_project_api.service.OwnerSettingService;
+import com.example.spring_boot_project_api.service.SuperAdminTelegramSettings;
 import com.example.spring_boot_project_api.service.TelegramService;
 
 import lombok.RequiredArgsConstructor;
@@ -51,6 +53,7 @@ public class TelegramServiceImpl implements TelegramService {
     private final HouseRepository houseRepository;
     private final ContractTenantRepository contractTenantRepository;
     private final TenantRepository tenantRepository;
+    private final com.example.spring_boot_project_api.service.SystemSettingService systemSettingService;
 
     @Override
     public void sendPaymentCreated(Payment payment) {
@@ -73,7 +76,65 @@ public class TelegramServiceImpl implements TelegramService {
         }
     }
 
+    @Override
+    public void sendPropertySubmittedToSuperAdmin(PropertySubmission submission) {
+        if (submission == null) {
+            return;
+        }
+        try {
+            if (!systemSettingService.isTelegramNotificationEnabledFor(NotificationType.PROPERTY_SUBMITTED)) {
+                log.debug("Telegram notifications for PROPERTY_SUBMITTED are disabled; skipping message");
+                return;
+            }
+            SuperAdminTelegramSettings settings = systemSettingService.getSuperAdminTelegramSettingsValues();
+            if (!settings.isDeliverable()) {
+                log.debug("Super admin Telegram destination is not configured; skipping property-submitted message");
+                return;
+            }
+            post(settings.botToken(), settings.chatId(), propertySubmittedMessage(submission));
+            log.info("Sent Telegram property-submitted notification to the super admin destination");
+        } catch (RuntimeException e) {
+            // Log the failure type only: the exception message can embed the request
+            // URL, which carries the bot token.
+            log.warn("Failed to send Telegram property-submitted message: {}",
+                    e.getClass().getSimpleName());
+        }
+    }
+
+    private String propertySubmittedMessage(PropertySubmission submission) {
+        StringBuilder sb = new StringBuilder("🏠 New property submitted for approval\n");
+        appendLine(sb, "Property", submission.propertyName());
+        appendLine(sb, "Type", submission.propertyType());
+        appendLine(sb, "Owner", submission.ownerName());
+        appendLine(sb, "Status", submission.status());
+        appendLine(sb, "Submitted", submission.submittedAt() != null
+                ? submission.submittedAt().format(TIME_FORMATTER)
+                : "—");
+        appendLine(sb, "Reference", submission.reference());
+        return sb.toString();
+    }
+
+    private void appendLine(StringBuilder sb, String label, String value) {
+        sb.append(label).append(": ").append(value == null || value.isBlank() ? "—" : value).append('\n');
+    }
+
+    /**
+     * Posts a message to an explicit bot token / chat id pair, mirroring the
+     * owner payment path.
+     */
+    private void post(String botToken, String chatId, String text) {
+        String url = TELEGRAM_API_BASE + botToken + "/sendMessage";
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        Map<String, String> payload = Map.of("chat_id", chatId, "text", text);
+        restTemplate.postForEntity(url, new HttpEntity<>(payload, headers), String.class);
+    }
+
     private void send(Payment payment, String text) {
+        if (systemSettingService != null && !systemSettingService.isTelegramNotificationEnabled()) {
+            log.debug("Telegram notifications are disabled by system settings; skipping");
+            return;
+        }
         Long ownerId = resolveOwnerId(payment);
         String[] credentials = resolveCredentials(ownerId);
         if (credentials == null) {

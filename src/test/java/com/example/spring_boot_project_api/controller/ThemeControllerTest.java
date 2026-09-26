@@ -176,11 +176,67 @@ class ThemeControllerTest {
     }
 
     @Test
-    void resetTheme_byAdmin_isForbidden() throws Exception {
+    void updateTheme_bySuperAdmin_succeeds() throws Exception {
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(false);
+        when(securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(true);
+        when(ownerSettingService.updateTheme(any())).thenReturn(sampleTheme());
+
+        mockMvc.perform(put("/api/v1/settings/theme")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_THEME)
+                        .with(user("admin1").roles("SUPER_ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.primaryColor").value("#2563EB"));
+
+        verify(ownerSettingService).updateTheme(any());
+    }
+
+    @Test
+    void getTheme_availableToSuperAdmin() throws Exception {
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(false);
+        when(securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(true);
+        when(ownerSettingService.getTheme()).thenReturn(sampleTheme());
+
+        mockMvc.perform(get("/api/v1/settings/theme").with(user("admin1").roles("SUPER_ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.primaryColor").value("#2563EB"));
+    }
+
+    @Test
+    void updateTheme_bySuperAdmin_rejectsInvalidColor() throws Exception {
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(false);
+        when(securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(true);
+
+        mockMvc.perform(put("/api/v1/settings/theme")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"themeMode\":\"DARK\",\"primaryColor\":\"blue\",\"secondaryColor\":\"#0F172A\"}")
+                        .with(user("admin1").roles("SUPER_ADMIN")))
+                .andExpect(status().isBadRequest());
+
+        verify(ownerSettingService, never()).updateTheme(any());
+    }
+
+    @Test
+    void resetTheme_bySuperAdmin_succeeds() throws Exception {
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(false);
+        when(securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(true);
+        when(ownerSettingService.resetTheme()).thenReturn(
+                new ThemeSettingsResponse(5L, "LIGHT", "#2563EB", "#0F172A"));
+
+        mockMvc.perform(post("/api/v1/settings/theme/reset")
+                        .with(user("admin1").roles("SUPER_ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.primaryColor").value("#2563EB"));
+
+        verify(ownerSettingService).resetTheme();
+    }
+
+    @Test
+    void resetTheme_byManager_isForbidden() throws Exception {
         when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(false);
 
         mockMvc.perform(post("/api/v1/settings/theme/reset")
-                        .with(user("admin1").roles("ADMIN")))
+                        .with(user("sopha").roles("MANAGER")))
                 .andExpect(status().isForbidden());
 
         verify(ownerSettingService, never()).resetTheme();

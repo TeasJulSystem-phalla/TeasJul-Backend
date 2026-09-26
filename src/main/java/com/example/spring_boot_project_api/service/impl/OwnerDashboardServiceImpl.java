@@ -24,10 +24,10 @@ import com.example.spring_boot_project_api.enums.RoomStatus;
 import com.example.spring_boot_project_api.model.House;
 import com.example.spring_boot_project_api.model.Invoice;
 import com.example.spring_boot_project_api.model.MaintenanceRequest;
-import com.example.spring_boot_project_api.model.MaintenanceRequestStatus;
 import com.example.spring_boot_project_api.model.Payment;
 import com.example.spring_boot_project_api.model.RentalContract;
 import com.example.spring_boot_project_api.model.Room;
+import com.example.spring_boot_project_api.repository.ContractDepositRepository;
 import com.example.spring_boot_project_api.repository.HouseRepository;
 import com.example.spring_boot_project_api.repository.InvoiceRepository;
 import com.example.spring_boot_project_api.repository.MaintenanceRequestRepository;
@@ -53,6 +53,7 @@ public class OwnerDashboardServiceImpl implements OwnerDashboardService {
     private final PaymentRepository paymentRepository;
     private final MaintenanceRequestRepository maintenanceRequestRepository;
     private final TenantRepository tenantRepository;
+    private final ContractDepositRepository depositRepository;
     private final HouseAccessService houseAccessService;
 
     @Override
@@ -95,10 +96,11 @@ public class OwnerDashboardServiceImpl implements OwnerDashboardService {
 
         List<MaintenanceRequest> allMaintenance =
                 maintenanceRequestRepository.findAllByHouseIdInOrderByCreatedAtDesc(scopeHouseIds);
-        long openMaintenanceRequests = allMaintenance.stream()
-                .filter(r -> r.getStatus() == MaintenanceRequestStatus.PENDING
-                        || r.getStatus() == MaintenanceRequestStatus.IN_PROGRESS)
-                .count();
+
+        BigDecimal paidDeposit = depositRepository.sumPaidAmountByHouseIds(scopeHouseIds);
+        if (paidDeposit == null) {
+            paidDeposit = BigDecimal.ZERO;
+        }
 
         List<ManagerDashboardResponse.RevenuePoint> revenueTrend =
                 buildRevenueTrend(scopeInvoices, fromDate, toDate);
@@ -139,7 +141,7 @@ public class OwnerDashboardServiceImpl implements OwnerDashboardService {
         return new OwnerDashboardResponse(
                 new OwnerDashboardResponse.OwnerKpis(
                         totalHouses, totalRooms, totalActiveTenants,
-                        occupancyRate, totalRevenue, overdueAmount, openMaintenanceRequests),
+                        occupancyRate, totalRevenue, overdueAmount, paidDeposit),
                 revenueTrend,
                 roomOccupancy,
                 paymentStatusBreakdown,
@@ -162,7 +164,7 @@ public class OwnerDashboardServiceImpl implements OwnerDashboardService {
     private OwnerDashboardResponse emptyDashboard() {
         return new OwnerDashboardResponse(
                 new OwnerDashboardResponse.OwnerKpis(
-                        0, 0, 0, 0.0, BigDecimal.ZERO, BigDecimal.ZERO, 0),
+                        0, 0, 0, 0.0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO),
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
     }
 

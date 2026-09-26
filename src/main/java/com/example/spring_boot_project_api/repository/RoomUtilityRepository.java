@@ -1,5 +1,6 @@
 package com.example.spring_boot_project_api.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,4 +33,6 @@ public interface RoomUtilityRepository
     void deleteByRoomIdAndUtilityTypeId(Long roomId, Long utilityTypeId);
 
     Optional<RoomUtility> findByRoomIdAndUtilityTypeId(Long roomId, Long utilityTypeId);
+
+    List<RoomUtility> findByRoomIdIn(Collection<Long> roomIds);
 }

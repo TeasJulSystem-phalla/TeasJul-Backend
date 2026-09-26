@@ -150,4 +150,75 @@ class RolePermissionServiceImplTest {
                 .isInstanceOf(Exception.class);
         verify(rolePermissionRepository, never()).deleteByRoleId(anyLong());
     }
+
+    // ------------------------------------------------------------------
+    // OWNER (without SUPER_ADMIN) cannot read/manage SUPER_ADMIN permissions
+    // ------------------------------------------------------------------
+
+    @Test
+    void getRolePermissionsOnSuperAdminIsBlockedForOwner() {
+        when(securityUtils.isOwnerWithoutSuperAdmin()).thenReturn(true);
+        when(roleRepository.findById(1L)).thenReturn(Optional.of(role(1L, "SUPER_ADMIN")));
+
+        assertThatThrownBy(() -> rolePermissionService.getRolePermissions(1L))
+                .isInstanceOf(AccessDeniedException.class);
+        verify(rolePermissionRepository, never()).findByRoleId(anyLong());
+    }
+
+    @Test
+    void assignPermissionToSuperAdminIsBlockedForOwner() {
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(true);
+        when(securityUtils.isOwnerWithoutSuperAdmin()).thenReturn(true);
+        when(roleRepository.findById(1L)).thenReturn(Optional.of(role(1L, "SUPER_ADMIN")));
+
+        assertThatThrownBy(() -> rolePermissionService.assignPermissionToRole(1L, 10L))
+                .isInstanceOf(AccessDeniedException.class);
+        verify(rolePermissionRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void removePermissionFromSuperAdminIsBlockedForOwner() {
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(true);
+        when(securityUtils.isOwnerWithoutSuperAdmin()).thenReturn(true);
+        when(roleRepository.findById(1L)).thenReturn(Optional.of(role(1L, "SUPER_ADMIN")));
+
+        assertThatThrownBy(() -> rolePermissionService.removePermissionFromRole(1L, 10L))
+                .isInstanceOf(AccessDeniedException.class);
+        verify(rolePermissionRepository, never()).deleteByRoleIdAndPermissionId(anyLong(), anyLong());
+    }
+
+    @Test
+    void replacePermissionsOnSuperAdminIsBlockedForOwner() {
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(true);
+        when(securityUtils.isOwnerWithoutSuperAdmin()).thenReturn(true);
+        when(roleRepository.findById(1L)).thenReturn(Optional.of(role(1L, "SUPER_ADMIN")));
+
+        assertThatThrownBy(() -> rolePermissionService.replaceRolePermissions(1L,
+                new ReplaceRolePermissionsRequest(List.of(10L))))
+                .isInstanceOf(AccessDeniedException.class);
+        verify(rolePermissionRepository, never()).deleteByRoleId(anyLong());
+    }
+
+    @Test
+    void superAdminCanStillManageSuperAdminPermissions() {
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(false);
+        when(securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(true);
+        when(roleRepository.findById(1L)).thenReturn(Optional.of(role(1L, "SUPER_ADMIN")));
+        Permission p1 = permission(10L, "LISTING_APPROVE");
+        when(permissionRepository.findAllById(any())).thenReturn(List.of(p1));
+        when(permissionMapper.toResponse(any(Permission.class)))
+                .thenAnswer(inv -> {
+                    Permission p = inv.getArgument(0);
+                    return new PermissionResponse(p.getId(), p.getName(), p.getCode(), p.getModule(),
+                            p.getDescription(), p.getCreatedAt());
+                });
+
+        List<PermissionResponse> result = rolePermissionService.replaceRolePermissions(1L,
+                new ReplaceRolePermissionsRequest(List.of(10L)));
+
+        assertThat(result).extracting(PermissionResponse::code)
+                .containsExactly("LISTING_APPROVE");
+        verify(rolePermissionRepository).deleteByRoleId(1L);
+        verify(rolePermissionRepository).saveAll(any());
+    }
 }
