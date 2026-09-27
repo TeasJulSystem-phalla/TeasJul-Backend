@@ -306,7 +306,8 @@ class AssistantStaffToolSecurityTest {
                 7L, 1L, "INV-2026-0007", 5L, "C-0005", 3L, "Dara", 6L, "A-101", 12L, "House Sun",
                 2026, 9, LocalDate.of(2026, 9, 5),
                 new BigDecimal("100.00"), new BigDecimal("10.00"), BigDecimal.ZERO,
-                new BigDecimal("100.00"), InvoiceStatus.OVERDUE, null, null, null, null, List.of());
+                new BigDecimal("100.00"), BigDecimal.ZERO, new BigDecimal("100.00"),
+                InvoiceStatus.OVERDUE, null, null, null, null, List.of());
     }
 
     private static ManagerDashboardResponse sampleDashboard() {

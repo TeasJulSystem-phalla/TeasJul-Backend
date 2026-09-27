@@ -26,6 +26,8 @@ public record InvoiceResponse(
         BigDecimal discount,
         BigDecimal lateFee,
         BigDecimal totalAmount,
+        BigDecimal paidAmount,
+        BigDecimal remainingAmount,
         InvoiceStatus status,
         BigDecimal exchangeRate,
         String exchangeRateCurrency,

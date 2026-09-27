@@ -416,8 +416,8 @@ class PaymentServiceImplTest {
 
         Invoice zeroInvoice = Invoice.builder()
                 .id(13L).owner(owner).status(InvoiceStatus.PENDING)
-                .totalAmount(new BigDecimal("100.00"))
-                .discount(new BigDecimal("100.00")).build();
+                .totalAmount(BigDecimal.ZERO)
+                .discount(BigDecimal.ZERO).build();
 
         when(invoiceRepository.findById(13L)).thenReturn(Optional.of(zeroInvoice));
         when(houseAccessService.resolveInvoiceHouseId(13L)).thenReturn(20L);

@@ -61,6 +61,7 @@ import com.example.spring_boot_project_api.service.PaymentService;
 import com.example.spring_boot_project_api.service.OwnerSettingService;
 import com.example.spring_boot_project_api.service.TelegramService;
 import com.example.spring_boot_project_api.util.PermissionConstants;
+import com.example.spring_boot_project_api.util.InvoiceBalanceCalculator;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import jakarta.persistence.criteria.Predicate;
@@ -114,7 +115,8 @@ public class PaymentServiceImpl implements PaymentService {
         expireStalePayments(invoice.getId());
         validateNoActivePayment(invoice.getId());
 
-        BigDecimal amount = calculateOutstandingAmount(invoice);
+        BigDecimal alreadyPaid = paymentRepository.findPaidTotalByInvoiceId(invoice.getId());
+        BigDecimal amount = calculateOutstandingAmount(invoice, alreadyPaid);
 
         String paymentNo = generatePaymentNo();
         String transactionId = generateTransactionId();
@@ -183,9 +185,7 @@ public class PaymentServiceImpl implements PaymentService {
         if (alreadyPaid == null) {
             alreadyPaid = BigDecimal.ZERO;
         }
-        BigDecimal outstanding = invoice.getTotalAmount()
-                .subtract(invoice.getDiscount())
-                .subtract(alreadyPaid);
+        BigDecimal outstanding = InvoiceBalanceCalculator.remainingBalance(invoice.getTotalAmount(), alreadyPaid);
         if (outstanding.signum() <= 0) {
             throw new InvalidPaymentOperationException("This invoice has no outstanding amount to pay");
         }
@@ -639,16 +639,13 @@ public class PaymentServiceImpl implements PaymentService {
             paidTotal = BigDecimal.ZERO;
         }
 
-        BigDecimal outstanding = invoice.getTotalAmount().subtract(invoice.getDiscount());
-
-        if (paidTotal.compareTo(outstanding) >= 0) {
-            invoice.setStatus(InvoiceStatus.PAID);
+        InvoiceStatus status = InvoiceBalanceCalculator.paymentStatus(invoice.getTotalAmount(), paidTotal);
+        if (invoice.getStatus() != status) {
+            invoice.setStatus(status);
             invoiceRepository.save(invoice);
-            log.info("Invoice marked as PAID: invoiceId={}, paid={}, outstanding={}", invoiceId, paidTotal, outstanding);
-        } else if (paidTotal.compareTo(BigDecimal.ZERO) > 0) {
-            invoice.setStatus(InvoiceStatus.PARTIAL);
-            invoiceRepository.save(invoice);
-            log.info("Invoice marked as PARTIAL: invoiceId={}, paid={}, outstanding={}", invoiceId, paidTotal, outstanding);
+            log.info("Invoice payment status updated: invoiceId={}, status={}, paid={}, remaining={}",
+                    invoiceId, status, paidTotal,
+                    InvoiceBalanceCalculator.remainingBalance(invoice.getTotalAmount(), paidTotal));
         }
     }
 
@@ -770,10 +767,8 @@ public class PaymentServiceImpl implements PaymentService {
         }
     }
 
-    private BigDecimal calculateOutstandingAmount(Invoice invoice) {
-        BigDecimal total = invoice.getTotalAmount();
-        BigDecimal discount = invoice.getDiscount();
-        BigDecimal outstanding = total.subtract(discount);
+    private BigDecimal calculateOutstandingAmount(Invoice invoice, BigDecimal alreadyPaid) {
+        BigDecimal outstanding = InvoiceBalanceCalculator.remainingBalance(invoice.getTotalAmount(), alreadyPaid);
 
         if (outstanding.signum() <= 0) {
             throw new InvalidPaymentOperationException("Invoice has no outstanding amount to pay");

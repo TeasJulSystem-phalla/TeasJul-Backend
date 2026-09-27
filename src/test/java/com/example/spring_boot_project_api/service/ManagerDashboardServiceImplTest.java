@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -82,10 +84,14 @@ class ManagerDashboardServiceImplTest {
         when(contractRepository.findByRoomHouseIdIn(List.of(8L, 9L)))
                 .thenReturn(List.of(contract(100L, 10L), contract(200L, 11L)));
 
+        LocalDate today = LocalDate.now();
         List<Invoice> scopeInvoices = List.of(
-                invoice(1L, InvoiceStatus.PAID, LocalDateTime.of(2026, 5, 10, 8, 0)),
-                invoice(2L, InvoiceStatus.OVERDUE, LocalDateTime.of(2026, 6, 5, 12, 0)),
-                invoice(3L, InvoiceStatus.PENDING, LocalDateTime.of(2026, 4, 20, 9, 0)));
+                invoice(1L, InvoiceStatus.PAID, LocalDateTime.of(2026, 5, 10, 8, 0),
+                        today.minusDays(10), "100.00"),
+                invoice(2L, InvoiceStatus.OVERDUE, LocalDateTime.of(2026, 6, 5, 12, 0),
+                        today.minusDays(5), "200.00"),
+                invoice(3L, InvoiceStatus.PENDING, LocalDateTime.of(2026, 4, 20, 9, 0),
+                        today.plusDays(5), "50.00"));
         when(invoiceRepository.findByContractIdIn(List.of(100L, 200L))).thenReturn(scopeInvoices);
 
         when(paymentRepository.findByInvoiceIdIn(List.of(1L))).thenReturn(List.of(
@@ -93,7 +99,13 @@ class ManagerDashboardServiceImplTest {
                 payment(2L, 1L, "50.00", PaymentStatus.PAID, LocalDateTime.of(2026, 6, 10, 8, 30)),
                 payment(3L, 1L, "80.00", PaymentStatus.PAID, LocalDateTime.of(2026, 7, 5, 8, 30))));
 
+        // One grouped query for the whole scope: only invoice 1 is settled, so invoice 2 is the
+        // single overdue one (past due, still owing) and invoice 3 is not due yet.
+        when(paymentRepository.sumPaidAmountByInvoiceIds(List.of(1L, 2L, 3L), PaymentStatus.PAID))
+                .thenReturn(List.<Object[]>of(new Object[] { 1L, new BigDecimal("100.00") }));
+
         when(maintenanceRequestRepository.findAllByHouseIdInOrderByCreatedAtDesc(List.of(8L, 9L)))
+
                 .thenReturn(List.of(
                         maintenanceRequest(1L, MaintenanceRequestStatus.PENDING,
                                 LocalDateTime.of(2026, 5, 1, 8, 0)),
@@ -148,6 +160,47 @@ class ManagerDashboardServiceImplTest {
         assertThat(dashboard.maintenanceStatus())
                 .anyMatch(s -> s.status().equals("RESOLVED") && s.count() == 0);
         assertThat(dashboard.maintenanceStatus()).hasSize(4);
+
+        // Overdue aggregation must stay a single grouped payment query, never one per invoice.
+        verify(paymentRepository, times(1))
+                .sumPaidAmountByInvoiceIds(List.of(1L, 2L, 3L), PaymentStatus.PAID);
+    }
+
+    @Test
+    void getDashboard_overdueCountDerivedFromDueDateAndOutstandingBalance() {
+        stubScope();
+        stubMultiHouseRoomCounts();
+        when(contractRepository.findByRoomHouseIdIn(List.of(8L, 9L)))
+                .thenReturn(List.of(contract(100L, 10L)));
+        when(maintenanceRequestRepository.findAllByHouseIdInOrderByCreatedAtDesc(List.of(8L, 9L)))
+                .thenReturn(List.of());
+
+        LocalDate today = LocalDate.now();
+        LocalDateTime createdAt = LocalDateTime.of(2026, 6, 1, 8, 0);
+        List<Invoice> invoices = List.of(
+                // Past due and still owing -> overdue
+                invoice(1L, InvoiceStatus.PENDING, createdAt, today.minusDays(1), "100.00"),
+                // Past due but fully settled -> not overdue
+                invoice(2L, InvoiceStatus.PAID, createdAt, today.minusDays(1), "100.00"),
+                // Due today is not yet late
+                invoice(3L, InvoiceStatus.PENDING, createdAt, today, "100.00"),
+                // Not due yet
+                invoice(4L, InvoiceStatus.PENDING, createdAt, today.plusDays(7), "100.00"),
+                // Partially paid but still owing -> overdue
+                invoice(5L, InvoiceStatus.PARTIAL, createdAt, today.minusDays(3), "100.00"),
+                // Cancelled invoices are closed
+                invoice(6L, InvoiceStatus.CANCELLED, createdAt, today.minusDays(9), "100.00"));
+        when(invoiceRepository.findByContractIdIn(List.of(100L))).thenReturn(invoices);
+
+        when(paymentRepository.sumPaidAmountByInvoiceIds(List.of(1L, 2L, 3L, 4L, 5L, 6L),
+                PaymentStatus.PAID))
+                .thenReturn(List.<Object[]>of(
+                        new Object[] { 2L, new BigDecimal("100.00") },
+                        new Object[] { 5L, new BigDecimal("40.00") }));
+
+        ManagerDashboardResponse dashboard = service.getDashboard(null, null, null, null, null);
+
+        assertThat(dashboard.kpis().overdueInvoices()).isEqualTo(2L);
     }
 
     @Test
@@ -277,7 +330,15 @@ class ManagerDashboardServiceImplTest {
     }
 
     private static Invoice invoice(Long id, InvoiceStatus status, LocalDateTime createdAt) {
-        return Invoice.builder().id(id).invoiceNo("INV-" + id).status(status).createdAt(createdAt).build();
+        return invoice(id, status, createdAt, null, null);
+    }
+
+    private static Invoice invoice(Long id, InvoiceStatus status, LocalDateTime createdAt,
+            LocalDate dueDate, String totalAmount) {
+        return Invoice.builder().id(id).invoiceNo("INV-" + id).status(status).createdAt(createdAt)
+                .dueDate(dueDate)
+                .totalAmount(totalAmount == null ? null : new BigDecimal(totalAmount))
+                .build();
     }
 
     private static Payment payment(Long id, Long invoiceId, String amount, PaymentStatus status,

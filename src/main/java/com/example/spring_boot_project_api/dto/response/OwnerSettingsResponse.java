@@ -42,6 +42,7 @@ public record OwnerSettingsResponse(
         String contractTerminationTerms,
         String contractAdditionalTerms,
         String contractLanguage,
+        OwnerContractInfoResponse contractParty,
 
         // Receipt
         String receiptPrefix,

@@ -1,5 +1,6 @@
 package com.example.spring_boot_project_api.dto.request;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -56,6 +57,10 @@ public record UpdateOwnerSettingsRequest(
         String contractAdditionalTerms,
         @Pattern(regexp = "KM|EN|BOTH", message = "Contract language must be KM, EN, or BOTH")
         String contractLanguage,
+
+        // Contract Party A (the owner's own identity on rental agreements)
+        @Valid
+        UpdateOwnerContractInfoRequest contractParty,
 
         // Receipt Settings
         String receiptPrefix,

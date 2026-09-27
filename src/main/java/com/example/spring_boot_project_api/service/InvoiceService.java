@@ -44,4 +44,10 @@ public interface InvoiceService {
     InvoiceResponse markPaid(Long id);
 
     InvoiceResponse recordPayment(Long id, BigDecimal paidAmount);
+
+    /** Stores an owner-supplied final late fee (reduce or waive) on an unpaid invoice. */
+    InvoiceResponse updateLateFee(Long id, BigDecimal lateFee);
+
+    /** Restores the policy late fee for the invoice's due date without changing subtotal or discount. */
+    InvoiceResponse recalculateLateFee(Long id);
 }

@@ -168,4 +168,17 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long>, JpaSpec
     """)
     List<Object[]> countGroupByStatusByYearMonthHouseIds(@Param("year") int year, @Param("month") int month,
             @Param("houseIds") Collection<Long> houseIds);
+
+    /**
+     * Reads the invoices billed for a month in the given houses. Used to derive overdue
+     * amounts/counts from each invoice's due date and outstanding balance, which cannot be
+     * expressed as a plain status count.
+     */
+    @Query("""
+        SELECT i FROM Invoice i, RentalContract c, Room r
+        WHERE i.contractId = c.id AND c.roomId = r.id AND r.houseId IN :houseIds
+          AND i.billingYear = :year AND i.billingMonth = :month
+    """)
+    List<Invoice> findByYearMonthHouseIds(@Param("year") int year, @Param("month") int month,
+            @Param("houseIds") Collection<Long> houseIds);
 }

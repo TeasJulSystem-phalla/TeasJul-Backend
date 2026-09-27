@@ -39,11 +39,51 @@ public class RentalContract {
     @Column(name = "owner_id", nullable = false)
     private Long ownerId;
 
+    /**
+     * Party A identity, snapshotted from the owner's contract settings when the
+     * contract was created. Every field is nullable: contracts created before the
+     * snapshot existed have none, and owners may leave optional fields blank.
+     *
+     * <p>These columns are never rewritten while the contract keeps the same owner,
+     * so a contract keeps showing the details it was signed with even after the
+     * owner updates their settings.</p>
+     */
+    @Column(name = "owner_full_name", length = 200)
+    private String ownerFullName;
+
+    @Column(name = "owner_gender", length = 20)
+    private String ownerGender;
+
+    @Column(name = "owner_date_of_birth")
+    private LocalDate ownerDateOfBirth;
+
+    @Column(name = "owner_nationality", length = 100)
+    private String ownerNationality;
+
+    @Column(name = "owner_national_id", length = 100)
+    private String ownerNationalId;
+
+    @Column(name = "owner_address", length = 255)
+    private String ownerAddress;
+
+    @Column(name = "owner_phone", length = 30)
+    private String ownerPhone;
+
+    @Column(name = "owner_occupation", length = 150)
+    private String ownerOccupation;
+
     @Column(name = "contract_no", nullable = false, length = 50)
     private String contractNo;
 
     @Column(name = "room_id", nullable = false)
     private Long roomId;
+
+    /**
+     * The reservation consumed by this contract, when the room was booked.
+     * Direct rentals deliberately leave this null.
+     */
+    @Column(name = "booking_id")
+    private Long bookingId;
 
     @Column(name = "start_date", nullable = false)
     private LocalDate startDate;

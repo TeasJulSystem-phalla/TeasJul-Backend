@@ -3,6 +3,7 @@ package com.example.spring_boot_project_api.service.impl;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -107,12 +108,19 @@ public class RoomBookingServiceImpl implements RoomBookingService {
     }
 
     @Override
-    public void completeBookedForRoom(Long roomId) {
-        bookingRepository.findFirstByRoomIdAndStatusOrderByCreatedAtDesc(roomId, RoomBookingStatus.BOOKED)
-                .ifPresent(booking -> {
-                    booking.setStatus(RoomBookingStatus.COMPLETED);
-                    bookingRepository.save(booking);
-                });
+    public Optional<RoomBooking> findCurrentBookingForRoom(Long roomId) {
+        return bookingRepository.findFirstByRoomIdAndStatusOrderByCreatedAtDesc(roomId, RoomBookingStatus.BOOKED);
+    }
+
+    @Override
+    public void completeBookingForContract(Long bookingId, Long roomId) {
+        RoomBooking booking = bookingRepository.findById(bookingId)
+                .filter(candidate -> candidate.getRoomId().equals(roomId)
+                        && candidate.getStatus() == RoomBookingStatus.BOOKED)
+                .orElseThrow(() -> new InvalidRoomBookingOperationException(
+                        "The selected room no longer has the booking required for this contract"));
+        booking.setStatus(RoomBookingStatus.COMPLETED);
+        bookingRepository.save(booking);
     }
 
     private RoomBooking findBooking(Long id) {

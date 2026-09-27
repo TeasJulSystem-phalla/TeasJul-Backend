@@ -1,6 +1,8 @@
 package com.example.spring_boot_project_api.service.impl;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.Comparator;
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -10,12 +12,15 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.example.spring_boot_project_api.dto.request.UpdateOwnerContractInfoRequest;
 import com.example.spring_boot_project_api.dto.request.UpdateOwnerSettingsRequest;
 import com.example.spring_boot_project_api.dto.request.UpdateThemeRequest;
+import com.example.spring_boot_project_api.dto.response.OwnerContractInfoResponse;
 import com.example.spring_boot_project_api.dto.response.OwnerSettingsResponse;
 import com.example.spring_boot_project_api.dto.response.ThemeSettingsResponse;
 import org.springframework.security.access.AccessDeniedException;
 
+import com.example.spring_boot_project_api.model.Gender;
 import com.example.spring_boot_project_api.model.OwnerSetting;
 import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.repository.OwnerSettingRepository;
@@ -42,6 +47,9 @@ public class OwnerSettingServiceImpl implements OwnerSettingService {
     private static final String THEME_DEFAULT_PRIMARY = "#2563EB";
     private static final String THEME_DEFAULT_SECONDARY = "#0F172A";
     private static final Pattern HEX_COLOR = Pattern.compile("^#[0-9a-fA-F]{6}$");
+
+    /** Key of the owner's contract Party A identity block inside the settings document. */
+    private static final String CONTRACT_PARTY = "contractParty";
 
     private final OwnerSettingRepository ownerSettingRepository;
     private final SecurityUtils securityUtils;
@@ -109,6 +117,16 @@ public class OwnerSettingServiceImpl implements OwnerSettingService {
             putIfNotNull(root, "contractAdditionalTerms", request.contractAdditionalTerms());
             putIfNotNull(root, "contractLanguage", request.contractLanguage());
 
+            // Contract Party A (the owner's own identity). Preserved as-is when the
+            // caller omits the block, so a partial save never wipes a signer's identity.
+            JsonNode existing = readOrNull(setting.getSettings());
+            UpdateOwnerContractInfoRequest contractParty = request.contractParty();
+            if (contractParty != null) {
+                root.set(CONTRACT_PARTY, contractPartyNode(contractParty));
+            } else if (existing != null && existing.has(CONTRACT_PARTY)) {
+                root.set(CONTRACT_PARTY, existing.get(CONTRACT_PARTY));
+            }
+
             // Receipt
             putIfNotNull(root, "receiptPrefix", request.receiptPrefix());
             putIfNotNull(root, "receiptLanguage", request.receiptLanguage());
@@ -123,9 +141,8 @@ public class OwnerSettingServiceImpl implements OwnerSettingService {
             putIfNotNull(root, "telegramChatId", request.telegramChatId());
 
             // Theme (managed by the dedicated theme endpoints) is preserved as-is
-            JsonNode existingRoot = readOrNull(setting.getSettings());
-            if (existingRoot != null && existingRoot.has("theme")) {
-                root.set("theme", existingRoot.get("theme"));
+            if (existing != null && existing.has("theme")) {
+                root.set("theme", existing.get("theme"));
             }
 
             setting.setSettings(OBJECT_MAPPER.writeValueAsString(root));
@@ -276,6 +293,24 @@ public class OwnerSettingServiceImpl implements OwnerSettingService {
                     }
                 })
                 .orElse("");
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public OwnerContractInfoResponse getContractInfo(Long ownerId) {
+        if (ownerId == null) {
+            return emptyContractInfo();
+        }
+        return ownerSettingRepository.findByOwnerId(ownerId)
+                .map(s -> {
+                    try {
+                        return contractInfoFrom(readOrNull(s.getSettings()));
+                    } catch (Exception e) {
+                        log.error("Failed to read contract info for owner: {}", ownerId, e);
+                        return emptyContractInfo();
+                    }
+                })
+                .orElseGet(OwnerSettingServiceImpl::emptyContractInfo);
     }
 
     private User getCurrentOwner() {
@@ -437,6 +472,7 @@ public class OwnerSettingServiceImpl implements OwnerSettingService {
             root.put("contractTerminationTerms", "");
             root.put("contractAdditionalTerms", "");
             root.put("contractLanguage", "KM");
+            root.set(CONTRACT_PARTY, defaultContractParty(owner));
             root.put("receiptPrefix", "RCP");
             root.put("receiptLanguage", "KM");
             root.put("receiptFooter", "");
@@ -467,6 +503,106 @@ public class OwnerSettingServiceImpl implements OwnerSettingService {
         if (value != null) {
             node.put(key, value);
         }
+    }
+
+    /**
+     * Serializes the owner's contract Party A block. Text is trimmed and blank
+     * values are written as empty strings so the stored document always has the
+     * same shape; optional identity fields are never required.
+     */
+    private ObjectNode contractPartyNode(UpdateOwnerContractInfoRequest party) {
+        ObjectNode node = OBJECT_MAPPER.createObjectNode();
+        node.put("fullName", trimToEmpty(party.fullName()));
+        if (party.gender() != null) {
+            node.put("gender", party.gender().name());
+        } else {
+            node.putNull("gender");
+        }
+        if (party.dateOfBirth() != null) {
+            node.put("dateOfBirth", party.dateOfBirth().toString());
+        } else {
+            node.putNull("dateOfBirth");
+        }
+        node.put("nationality", trimToEmpty(party.nationality()));
+        node.put("nationalId", trimToEmpty(party.nationalId()));
+        node.put("currentAddress", trimToEmpty(party.currentAddress()));
+        node.put("phone", trimToEmpty(party.phone()));
+        node.put("occupation", trimToEmpty(party.occupation()));
+        return node;
+    }
+
+    /**
+     * Seeds a brand-new settings row with the identity already on the owner's
+     * account, so a first-time owner is not asked to retype their own name.
+     */
+    private ObjectNode defaultContractParty(User owner) {
+        ObjectNode node = OBJECT_MAPPER.createObjectNode();
+        node.put("fullName", trimToEmpty(fullNameOf(owner)));
+        node.putNull("gender");
+        node.putNull("dateOfBirth");
+        node.put("nationality", "");
+        node.put("nationalId", "");
+        node.put("currentAddress", "");
+        node.put("phone", trimToEmpty(owner == null ? null : owner.getPhone()));
+        node.put("occupation", "");
+        return node;
+    }
+
+    private OwnerContractInfoResponse contractInfoFrom(JsonNode root) {
+        JsonNode party = root == null ? null : root.get(CONTRACT_PARTY);
+        if (party == null || !party.isObject()) {
+            return emptyContractInfo();
+        }
+        return new OwnerContractInfoResponse(
+                getTextOrDefault(party, "fullName", ""),
+                genderOrNull(party, "gender"),
+                dateOrNull(party, "dateOfBirth"),
+                getTextOrDefault(party, "nationality", ""),
+                getTextOrDefault(party, "nationalId", ""),
+                getTextOrDefault(party, "currentAddress", ""),
+                getTextOrDefault(party, "phone", ""),
+                getTextOrDefault(party, "occupation", ""));
+    }
+
+    private static OwnerContractInfoResponse emptyContractInfo() {
+        return new OwnerContractInfoResponse("", null, null, "", "", "", "", "");
+    }
+
+    private Gender genderOrNull(JsonNode node, String field) {
+        String value = getTextOrDefault(node, field, "");
+        if (value.isEmpty()) {
+            return null;
+        }
+        try {
+            return Gender.valueOf(value.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private LocalDate dateOrNull(JsonNode node, String field) {
+        String value = getTextOrDefault(node, field, "");
+        if (value.isEmpty()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(value.trim());
+        } catch (DateTimeParseException e) {
+            return null;
+        }
+    }
+
+    private static String fullNameOf(User user) {
+        if (user == null) {
+            return "";
+        }
+        String first = user.getFirstName() == null ? "" : user.getFirstName().trim();
+        String last = user.getLastName() == null ? "" : user.getLastName().trim();
+        return (first + " " + last).trim();
+    }
+
+    private static String trimToEmpty(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private OwnerSettingsResponse toResponse(OwnerSetting setting) {
@@ -502,6 +638,7 @@ public class OwnerSettingServiceImpl implements OwnerSettingService {
                     getTextOrDefault(root, "contractTerminationTerms", ""),
                     getTextOrDefault(root, "contractAdditionalTerms", ""),
                     getTextOrDefault(root, "contractLanguage", "KM"),
+                    contractInfoFrom(root),
                     getTextOrDefault(root, "receiptPrefix", "RCP"),
                     getTextOrDefault(root, "receiptLanguage", "KM"),
                     getTextOrDefault(root, "receiptFooter", ""),

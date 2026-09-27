@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.example.spring_boot_project_api.dto.request.AddInvoiceItemRequest;
 import com.example.spring_boot_project_api.dto.request.BulkGenerateInvoiceRequest;
 import com.example.spring_boot_project_api.dto.request.GenerateInvoiceRequest;
+import com.example.spring_boot_project_api.dto.request.UpdateInvoiceLateFeeRequest;
 import com.example.spring_boot_project_api.dto.response.BulkGenerateInvoiceResponse;
 import com.example.spring_boot_project_api.dto.response.InvoicePreviewResponse;
 import com.example.spring_boot_project_api.dto.response.InvoiceResponse;
@@ -130,6 +131,26 @@ public class InvoiceController {
     public ResponseEntity<InvoiceResponse> recordPayment(@PathVariable Long id,
             @RequestParam BigDecimal amount) {
         return ResponseEntity.ok(invoiceService.recordPayment(id, amount));
+    }
+
+    @Operation(summary = "Update the invoice late fee",
+            description = "Stores an owner-supplied final late fee on an unpaid or partially paid "
+                    + "invoice so the fee can be reduced or waived. Subtotal and discount are "
+                    + "unchanged; the total due and remaining balance are recalculated. A fully "
+                    + "paid invoice cannot be changed.")
+    @PatchMapping("/{id}/late-fee")
+    public ResponseEntity<InvoiceResponse> updateLateFee(@PathVariable Long id,
+            @Valid @RequestBody UpdateInvoiceLateFeeRequest request) {
+        return ResponseEntity.ok(invoiceService.updateLateFee(id, request.lateFee()));
+    }
+
+    @Operation(summary = "Recalculate the late fee",
+            description = "Restores the policy late fee for the invoice due date. The amount is "
+                    + "derived from the due date, so repeating the call does not increase the fee. "
+                    + "A fully paid invoice is left unchanged.")
+    @PatchMapping("/{id}/late-fee/recalculate")
+    public ResponseEntity<InvoiceResponse> recalculateLateFee(@PathVariable Long id) {
+        return ResponseEntity.ok(invoiceService.recalculateLateFee(id));
     }
 
     @Operation(summary = "Cancel an invoice",

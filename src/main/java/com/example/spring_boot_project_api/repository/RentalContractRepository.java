@@ -39,6 +39,8 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
 
     boolean existsByRoomIdAndStatus(Long roomId, RentalContractStatus status);
 
+    boolean existsByBookingId(Long bookingId);
+
     boolean existsByContractNo(String contractNo);
 
     // ---- Contract expiration ----

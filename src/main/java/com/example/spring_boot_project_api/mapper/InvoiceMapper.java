@@ -1,5 +1,6 @@
 package com.example.spring_boot_project_api.mapper;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import org.springframework.stereotype.Component;
@@ -8,6 +9,7 @@ import com.example.spring_boot_project_api.dto.response.InvoiceItemResponse;
 import com.example.spring_boot_project_api.dto.response.InvoiceResponse;
 import com.example.spring_boot_project_api.model.Invoice;
 import com.example.spring_boot_project_api.model.InvoiceItem;
+import com.example.spring_boot_project_api.util.InvoiceBalanceCalculator;
 
 @Component
 public class InvoiceMapper {
@@ -24,10 +26,14 @@ public class InvoiceMapper {
     }
 
     public InvoiceResponse toResponse(Invoice invoice) {
-        return toResponse(invoice, null);
+        return toResponse(invoice, null, BigDecimal.ZERO);
     }
 
     public InvoiceResponse toResponse(Invoice invoice, Object[] details) {
+        return toResponse(invoice, details, BigDecimal.ZERO);
+    }
+
+    public InvoiceResponse toResponse(Invoice invoice, Object[] details, BigDecimal paidAmount) {
         Long contractId = invoice.getContractId();
         String contractNo = null;
         Long tenantId = null;
@@ -52,6 +58,9 @@ public class InvoiceMapper {
                 .map(this::toItemResponse)
                 .toList();
 
+        BigDecimal totalAmount = InvoiceBalanceCalculator.amount(invoice.getTotalAmount());
+        BigDecimal paid = InvoiceBalanceCalculator.amount(paidAmount);
+
         return new InvoiceResponse(
                 invoice.getId(),
                 invoice.getOwner().getId(),
@@ -70,7 +79,9 @@ public class InvoiceMapper {
                 invoice.getSubtotal(),
                 invoice.getDiscount(),
                 invoice.getLateFee(),
-                invoice.getTotalAmount(),
+                totalAmount,
+                paid,
+                InvoiceBalanceCalculator.remainingBalance(totalAmount, paid),
                 invoice.getStatus(),
                 invoice.getExchangeRate(),
                 invoice.getExchangeRateCurrency(),

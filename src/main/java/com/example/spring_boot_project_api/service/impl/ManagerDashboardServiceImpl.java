@@ -8,6 +8,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -31,6 +32,7 @@ import com.example.spring_boot_project_api.repository.PaymentRepository;
 import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.service.HouseAccessService;
+import com.example.spring_boot_project_api.util.InvoiceBalanceCalculator;
 import com.example.spring_boot_project_api.service.ManagerDashboardService;
 
 import lombok.RequiredArgsConstructor;
@@ -95,7 +97,10 @@ public class ManagerDashboardServiceImpl implements ManagerDashboardService {
         // Payment metrics: revenue (paid amount) + payment status counts.
         Map<InvoiceStatus, Long> invoiceStatusCounts = invoiceStatusCounts(rangeInvoices, paymentStatus);
         long pendingInvoices = invoiceStatusCounts.getOrDefault(InvoiceStatus.PENDING, 0L);
-        long overdueInvoices = invoiceStatusCounts.getOrDefault(InvoiceStatus.OVERDUE, 0L);
+        // Derived from due date + outstanding balance. The invoice lifecycle never persists
+        // InvoiceStatus.OVERDUE, so counting that status always reported zero. Date scope is
+        // unchanged: still the invoices created within the selected range.
+        long overdueInvoices = countOverdueInvoices(rangeInvoices);
 
         BigDecimal revenue = sumRevenue(scopeInvoices, fromDate, toDate);
         double occupancyRate = totalRooms == 0 ? 0.0
@@ -167,6 +172,49 @@ public class ManagerDashboardServiceImpl implements ManagerDashboardService {
             }
         }
         return counts;
+    }
+
+    /**
+     * Counts invoices whose due date has passed and that still owe money. PAID payment
+     * totals are fetched in one grouped query, so this adds no per-invoice payment lookup.
+     */
+    private long countOverdueInvoices(List<Invoice> invoices) {
+        if (invoices.isEmpty()) {
+            return 0L;
+        }
+        List<Long> invoiceIds = invoices.stream()
+                .map(Invoice::getId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, BigDecimal> paidByInvoice = new HashMap<>();
+        List<Object[]> rows = invoiceIds.isEmpty()
+                ? List.of()
+                : paymentRepository.sumPaidAmountByInvoiceIds(invoiceIds, PaymentStatus.PAID);
+        if (rows != null) {
+            for (Object[] row : rows) {
+                if (row == null || row.length < 2 || row[0] == null) {
+                    continue;
+                }
+                BigDecimal amount = row[1] instanceof BigDecimal value
+                        ? value : new BigDecimal(row[1].toString());
+                paidByInvoice.put(((Number) row[0]).longValue(), amount);
+            }
+        }
+
+        LocalDate today = LocalDate.now();
+        long count = 0L;
+        for (Invoice invoice : invoices) {
+            if (invoice.getStatus() == InvoiceStatus.CANCELLED) {
+                continue;
+            }
+            BigDecimal remaining = InvoiceBalanceCalculator.remainingBalance(
+                    invoice.getTotalAmount(), paidByInvoice.get(invoice.getId()));
+            if (InvoiceBalanceCalculator.isOverdue(invoice.getDueDate(), remaining, today)) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private List<Invoice> filterInvoicesByDate(List<Invoice> invoices, LocalDate fromDate,

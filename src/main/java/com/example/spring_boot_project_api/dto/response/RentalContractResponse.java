@@ -12,6 +12,21 @@ import lombok.Data;
 public class RentalContractResponse {
     private Long id;
     private Long ownerId;
+
+    /**
+     * Party A identity as snapshotted onto the contract at creation time. Null
+     * fields mean the owner left that detail blank (or the contract predates the
+     * snapshot) - they are not back-filled from current settings on read.
+     */
+    private String ownerFullName;
+    private String ownerGender;
+    private LocalDate ownerDateOfBirth;
+    private String ownerNationality;
+    private String ownerNationalId;
+    private String ownerAddress;
+    private String ownerPhone;
+    private String ownerOccupation;
+
     private String contractNo;
     private Long roomId;
     private LocalDate startDate;

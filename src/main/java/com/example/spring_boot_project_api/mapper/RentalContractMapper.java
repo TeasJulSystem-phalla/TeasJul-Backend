@@ -14,6 +14,14 @@ public class RentalContractMapper {
         return new RentalContractResponse(
                 contract.getId(),
                 contract.getOwnerId(),
+                contract.getOwnerFullName(),
+                contract.getOwnerGender(),
+                contract.getOwnerDateOfBirth(),
+                contract.getOwnerNationality(),
+                contract.getOwnerNationalId(),
+                contract.getOwnerAddress(),
+                contract.getOwnerPhone(),
+                contract.getOwnerOccupation(),
                 contract.getContractNo(),
                 contract.getRoomId(),
                 contract.getStartDate(),
@@ -40,6 +48,12 @@ public class RentalContractMapper {
                 .notes(request.getNotes())
                 .build();
     }
+    /**
+     * Copies the editable contract terms onto an existing contract. The Party A
+     * snapshot is deliberately not touched here: a contract keeps the signer
+     * identity it was created with. Only the contract service re-snapshots, and
+     * only when the contract actually changes owner.
+     */
     public void updateEntityFromDto(RentalContractRequest request, RentalContract contract) {
         if (request == null || contract == null) {
             return;

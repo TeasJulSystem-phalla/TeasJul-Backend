@@ -8,6 +8,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -36,6 +37,7 @@ import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.TenantRepository;
 import com.example.spring_boot_project_api.service.HouseAccessService;
+import com.example.spring_boot_project_api.util.InvoiceBalanceCalculator;
 import com.example.spring_boot_project_api.service.OwnerDashboardService;
 
 import lombok.RequiredArgsConstructor;
@@ -88,11 +90,11 @@ public class OwnerDashboardServiceImpl implements OwnerDashboardService {
 
         BigDecimal totalRevenue = sumRevenue(scopeInvoices, fromDate, toDate);
 
-        BigDecimal overdueAmount = scopeInvoices.stream()
-                .filter(inv -> inv.getStatus() == InvoiceStatus.OVERDUE)
-                .map(inv -> (inv.getTotalAmount() != null ? inv.getTotalAmount() : BigDecimal.ZERO)
-                        .subtract(inv.getDiscount() != null ? inv.getDiscount() : BigDecimal.ZERO))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // Overdue is derived from due date + outstanding balance across the whole scope,
+        // not restricted by the selected dashboard date range. PAID totals are aggregated
+        // once for every scoped invoice so no per-invoice payment query is issued.
+        Map<Long, BigDecimal> paidByInvoice = paidAmountsByInvoiceId(scopeInvoices);
+        BigDecimal overdueAmount = overdueBalance(scopeInvoices, paidByInvoice, LocalDate.now());
 
         List<MaintenanceRequest> allMaintenance =
                 maintenanceRequestRepository.findAllByHouseIdInOrderByCreatedAtDesc(scopeHouseIds);
@@ -130,7 +132,7 @@ public class OwnerDashboardServiceImpl implements OwnerDashboardService {
                 buildRevenueByHouse(scopeHouseIds, fromDate, toDate);
 
         List<OwnerDashboardResponse.TopPerformingHouse> topHouses =
-                buildTopHouses(scopeHouseIds, fromDate, toDate);
+                buildTopHouses(scopeHouseIds, fromDate, toDate, paidByInvoice);
 
         List<OwnerDashboardResponse.RecentPayment> recentPayments =
                 buildRecentPayments(scopeHouseIds);
@@ -166,6 +168,60 @@ public class OwnerDashboardServiceImpl implements OwnerDashboardService {
                 new OwnerDashboardResponse.OwnerKpis(
                         0, 0, 0, 0.0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO),
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+    }
+
+    /**
+     * PAID payment totals per invoice, aggregated in a single grouped query. Reusing this
+     * map keeps the dashboard free of per-invoice payment lookups.
+     */
+    private Map<Long, BigDecimal> paidAmountsByInvoiceId(List<Invoice> invoices) {
+        List<Long> invoiceIds = invoices.stream()
+                .map(Invoice::getId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, BigDecimal> paidByInvoice = new HashMap<>();
+        if (invoiceIds.isEmpty()) {
+            return paidByInvoice;
+        }
+        List<Object[]> rows = paymentRepository.sumPaidAmountByInvoiceIds(invoiceIds, PaymentStatus.PAID);
+        if (rows == null) {
+            return paidByInvoice;
+        }
+        for (Object[] row : rows) {
+            if (row == null || row.length < 2 || row[0] == null) {
+                continue;
+            }
+            BigDecimal amount = row[1] instanceof BigDecimal value
+                    ? value : new BigDecimal(row[1].toString());
+            paidByInvoice.put(((Number) row[0]).longValue(), amount);
+        }
+        return paidByInvoice;
+    }
+
+    /**
+     * Overdue exposure for the given invoices: the outstanding balance of every invoice
+     * whose due date has already passed.
+     *
+     * <p>The persisted {@code totalAmount} is already {@code subtotal - discount + lateFee}
+     * (see {@code InvoiceBalanceCalculator.invoiceTotal}), so it is used directly instead of
+     * re-deriving it from the lazy item collection, and the discount is never subtracted twice.
+     * Only PAID payments reduce the balance; a fully paid invoice contributes nothing.
+     */
+    private BigDecimal overdueBalance(List<Invoice> invoices, Map<Long, BigDecimal> paidByInvoice,
+            LocalDate asOf) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (Invoice invoice : invoices) {
+            if (invoice.getStatus() == InvoiceStatus.CANCELLED) {
+                continue;
+            }
+            BigDecimal remaining = InvoiceBalanceCalculator.remainingBalance(
+                    invoice.getTotalAmount(), paidByInvoice.get(invoice.getId()));
+            if (InvoiceBalanceCalculator.isOverdue(invoice.getDueDate(), remaining, asOf)) {
+                total = total.add(remaining);
+            }
+        }
+        return total;
     }
 
     private BigDecimal sumRevenue(List<Invoice> invoices, LocalDate fromDate, LocalDate toDate) {
@@ -325,7 +381,8 @@ public class OwnerDashboardServiceImpl implements OwnerDashboardService {
     }
 
     private List<OwnerDashboardResponse.TopPerformingHouse> buildTopHouses(
-            List<Long> scopeHouseIds, LocalDate fromDate, LocalDate toDate) {
+            List<Long> scopeHouseIds, LocalDate fromDate, LocalDate toDate,
+            Map<Long, BigDecimal> paidByInvoice) {
         Map<Long, String> houseNames = houseRepository.findAllById(scopeHouseIds).stream()
                 .collect(Collectors.toMap(House::getId, House::getName, (a, b) -> a));
 
@@ -350,12 +407,7 @@ public class OwnerDashboardServiceImpl implements OwnerDashboardService {
                             ? List.of()
                             : invoiceRepository.findByContractIdIn(hContractIds);
                     BigDecimal revenue = sumRevenue(hInvoices, fromDate, toDate);
-                    BigDecimal overdue = hInvoices.stream()
-                            .filter(inv -> inv.getStatus() == InvoiceStatus.OVERDUE)
-                            .map(inv -> (inv.getTotalAmount() != null ? inv.getTotalAmount() : BigDecimal.ZERO)
-                                    .subtract(inv.getDiscount() != null
-                                            ? inv.getDiscount() : BigDecimal.ZERO))
-                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+                    BigDecimal overdue = overdueBalance(hInvoices, paidByInvoice, LocalDate.now());
 
                     return new OwnerDashboardResponse.TopPerformingHouse(
                             houseNames.getOrDefault(hId, "House #" + hId),

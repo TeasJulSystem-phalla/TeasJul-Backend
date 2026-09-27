@@ -9,7 +9,9 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -27,6 +29,7 @@ import com.example.spring_boot_project_api.enums.PaymentStatus;
 import com.example.spring_boot_project_api.enums.RoomStatus;
 import com.example.spring_boot_project_api.exception.InvalidReportQueryException;
 import com.example.spring_boot_project_api.model.House;
+import com.example.spring_boot_project_api.model.Invoice;
 import com.example.spring_boot_project_api.repository.ContractDepositRepository;
 import com.example.spring_boot_project_api.repository.ContractRenewalRepository;
 import com.example.spring_boot_project_api.repository.HouseRepository;
@@ -148,6 +151,31 @@ class ManagerReportServiceImplTest {
                         new Object[]{"IN_PROGRESS", 3L},
                         new Object[]{"RESOLVED", 5L}));
 
+
+        when(paymentRepository.sumPaidAmountByInvoiceIds(anyList(), any()))
+                .thenAnswer(inv -> {
+                    List<Object[]> rows = new ArrayList<>();
+                    for (int i = 0; i < 5; i++) {
+                        Long invoiceId = (i + 1L);
+                        rows.add(new Object[]{invoiceId, new BigDecimal("50.00")});
+                    }
+                    return rows;
+                });
+
+        when(invoiceRepository.findByYearMonthHouseIds(anyInt(), anyInt(), anyList()))
+                .thenAnswer(invocation -> {
+                    List<Invoice> invoices = new ArrayList<>();
+                    for (int i = 0; i < 5; i++) {
+                        Invoice inv = new Invoice();
+                        inv.setId(i + 1L);
+                        inv.setDueDate(LocalDate.of(2026, 9, 1 + i));
+                        inv.setTotalAmount(new BigDecimal("100.00"));
+                        inv.setStatus(InvoiceStatus.OVERDUE);
+                        invoices.add(inv);
+                    }
+                    return invoices;
+                });
+
         when(paymentRepository.sumPaidGroupByYearMonthByHouseIds(any(), any(), anyList()))
                 .thenReturn(List.of(
                         new Object[]{2026, 8, new BigDecimal("1500.00")},
@@ -228,7 +256,7 @@ class ManagerReportServiceImplTest {
 
         assertThat(report.roomOccupancy())
                 .extracting(s -> s.status())
-                .containsExactly("AVAILABLE", "MAINTENANCE", "OCCUPIED", "RESERVED");
+                .containsExactly("AVAILABLE", "BOOKED", "MAINTENANCE", "OCCUPIED", "RESERVED");
         assertThat(report.roomOccupancy())
                 .filteredOn(s -> s.status().equals("OCCUPIED"))
                 .singleElement()

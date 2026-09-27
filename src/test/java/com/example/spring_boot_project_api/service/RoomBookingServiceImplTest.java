@@ -102,6 +102,32 @@ class RoomBookingServiceImplTest {
         verify(roomRepository).save(room);
     }
 
+    @Test
+    void completingBookingForContractCompletesOnlyTheSpecifiedCurrentBooking() {
+        RoomBooking booking = new RoomBooking();
+        booking.setId(5L);
+        booking.setRoomId(10L);
+        booking.setStatus(RoomBookingStatus.BOOKED);
+        when(bookingRepository.findById(5L)).thenReturn(Optional.of(booking));
+
+        bookingService.completeBookingForContract(5L, 10L);
+
+        assertThat(booking.getStatus()).isEqualTo(RoomBookingStatus.COMPLETED);
+        verify(bookingRepository).save(booking);
+    }
+
+    @Test
+    void cancelledBookingCannotBeCompletedForContract() {
+        RoomBooking booking = new RoomBooking();
+        booking.setId(5L);
+        booking.setRoomId(10L);
+        booking.setStatus(RoomBookingStatus.CANCELLED);
+        when(bookingRepository.findById(5L)).thenReturn(Optional.of(booking));
+
+        assertThatThrownBy(() -> bookingService.completeBookingForContract(5L, 10L))
+                .isInstanceOf(InvalidRoomBookingOperationException.class);
+    }
+
     private void assertCannotBook(RoomStatus status) {
         when(securityUtils.getCurrentUserId()).thenReturn(1L);
         when(roomRepository.findWithLockById(10L)).thenReturn(Optional.of(room(status, 1L)));

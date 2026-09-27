@@ -35,6 +35,7 @@ import com.example.spring_boot_project_api.dto.response.InvoiceResponse;
 import com.example.spring_boot_project_api.dto.response.PageResponse;
 import com.example.spring_boot_project_api.enums.InvoiceItemType;
 import com.example.spring_boot_project_api.enums.InvoiceStatus;
+import com.example.spring_boot_project_api.enums.PaymentStatus;
 import com.example.spring_boot_project_api.enums.RentalContractStatus;
 import com.example.spring_boot_project_api.enums.UtilityBillingMethod;
 import com.example.spring_boot_project_api.enums.UtilityMeterStatus;
@@ -64,6 +65,7 @@ import com.example.spring_boot_project_api.model.UtilityType;
 import com.example.spring_boot_project_api.repository.ContractTenantRepository;
 import com.example.spring_boot_project_api.repository.HouseRepository;
 import com.example.spring_boot_project_api.repository.InvoiceRepository;
+import com.example.spring_boot_project_api.repository.PaymentRepository;
 import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.RoomUtilityRepository;
@@ -78,6 +80,7 @@ import com.example.spring_boot_project_api.service.InvoiceService;
 import com.example.spring_boot_project_api.service.NotificationService;
 import com.example.spring_boot_project_api.service.OwnerSettingService;
 import com.example.spring_boot_project_api.util.PermissionConstants;
+import com.example.spring_boot_project_api.util.InvoiceBalanceCalculator;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
 import jakarta.persistence.criteria.Predicate;
@@ -92,6 +95,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     private static final Logger log = LoggerFactory.getLogger(InvoiceServiceImpl.class);
 
     private final InvoiceRepository invoiceRepository;
+    private final PaymentRepository paymentRepository;
     private final InvoiceMapper invoiceMapper;
     private final RentalContractRepository contractRepository;
     private final RoomRepository roomRepository;
@@ -157,7 +161,10 @@ public class InvoiceServiceImpl implements InvoiceService {
 
         List<InvoiceItemResponse> items = computeItems(ctx, request.billingYear(), request.billingMonth());
         BigDecimal subtotal = itemsSubtotal(items);
-        BigDecimal total = subtotal.subtract(ctx.discount());
+        LocalDate dueDate = resolveDueDate(request, ctx.contract(), ctx.owner().getId());
+        // Policy late fee: a flat amount per calendar day past the due date, stored on the invoice.
+        BigDecimal lateFee = InvoiceBalanceCalculator.defaultLateFee(dueDate, LocalDate.now());
+        BigDecimal total = InvoiceBalanceCalculator.invoiceTotal(subtotal, ctx.discount(), lateFee);
 
         Invoice invoice = Invoice.builder()
                 .owner(ctx.owner())
@@ -165,10 +172,10 @@ public class InvoiceServiceImpl implements InvoiceService {
                 .contractId(ctx.contract().getId())
                 .billingYear(request.billingYear())
                 .billingMonth(request.billingMonth())
-                .dueDate(resolveDueDate(request, ctx.contract(), ctx.owner().getId()))
+                .dueDate(dueDate)
                 .subtotal(subtotal)
                 .discount(ctx.discount())
-                .lateFee(BigDecimal.ZERO)
+                .lateFee(lateFee)
                 .totalAmount(total)
                 .exchangeRate(ownerSettingService.getExchangeRate(ctx.owner().getId()))
                 .exchangeRateCurrency("KHR")
@@ -191,7 +198,7 @@ public class InvoiceServiceImpl implements InvoiceService {
         } catch (RuntimeException e) {
             log.warn("Failed to create invoice notification", e);
         }
-        return invoiceMapper.toResponse(saved, ctx.details());
+        return toResponse(saved, ctx.details());
     }
 
     // ---- Bulk Generate ------------------------------------------------
@@ -537,6 +544,7 @@ public class InvoiceServiceImpl implements InvoiceService {
         Map<Long, Tenant> tenants = tenantIds.isEmpty() ? Map.of()
                 : tenantRepository.findAllById(tenantIds).stream()
                         .collect(Collectors.toMap(Tenant::getId, t -> t));
+        Map<Long, BigDecimal> paidAmounts = paidAmountsByInvoiceId(invoiceIds);
 
         return invoices.stream()
                 .map(invoice -> {
@@ -556,7 +564,8 @@ public class InvoiceServiceImpl implements InvoiceService {
                             house != null ? house.getId() : null,
                             house != null ? house.getName() : null
                     };
-                    return invoiceMapper.toResponse(invoice, details);
+                    return invoiceMapper.toResponse(invoice, details,
+                            paidAmounts.getOrDefault(invoice.getId(), BigDecimal.ZERO));
                 })
                 .toList();
     }
@@ -585,6 +594,33 @@ public class InvoiceServiceImpl implements InvoiceService {
         return result;
     }
 
+    private InvoiceResponse toResponse(Invoice invoice, Object[] details) {
+        BigDecimal paidAmount = paymentRepository.findPaidTotalByInvoiceId(invoice.getId());
+        return invoiceMapper.toResponse(invoice, details, paidAmount);
+    }
+
+    /** Aggregates PAID records once for an invoice list; pending and failed attempts are excluded in SQL. */
+    private Map<Long, BigDecimal> paidAmountsByInvoiceId(List<Long> invoiceIds) {
+        if (invoiceIds == null || invoiceIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, BigDecimal> paidAmounts = new HashMap<>();
+        List<Object[]> rows = paymentRepository.sumPaidAmountByInvoiceIds(invoiceIds, PaymentStatus.PAID);
+        if (rows == null) {
+            return paidAmounts;
+        }
+        for (Object[] row : rows) {
+            if (row == null || row.length < 2 || row[0] == null || row[1] == null) {
+                continue;
+            }
+            Long invoiceId = ((Number) row[0]).longValue();
+            BigDecimal amount = row[1] instanceof BigDecimal value
+                    ? value : new BigDecimal(row[1].toString());
+            paidAmounts.put(invoiceId, amount);
+        }
+        return paidAmounts;
+    }
+
     // ---- Get / modify -------------------------------------------------
 
     @Override
@@ -592,7 +628,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     public InvoiceResponse getInvoiceById(Long id) {
         securityUtils.requirePermission(PermissionConstants.INVOICE_VIEW);
         Invoice invoice = getAccessibleInvoice(id);
-        return invoiceMapper.toResponse(invoice, resolveDetails(invoice));
+        return toResponse(invoice, resolveDetails(invoice));
     }
 
     @Override
@@ -620,7 +656,7 @@ public class InvoiceServiceImpl implements InvoiceService {
 
         recomputeTotals(invoice);
         Invoice saved = invoiceRepository.save(invoice);
-        return invoiceMapper.toResponse(saved, resolveDetails(saved));
+        return toResponse(saved, resolveDetails(saved));
     }
 
     @Override
@@ -635,9 +671,14 @@ public class InvoiceServiceImpl implements InvoiceService {
         if (invoice.getStatus() == InvoiceStatus.CANCELLED) {
             throw new InvalidInvoiceOperationException("A cancelled invoice cannot be modified");
         }
-        invoice.setStatus(status);
+        if (status == InvoiceStatus.PENDING || status == InvoiceStatus.PARTIAL || status == InvoiceStatus.PAID) {
+            BigDecimal paidTotal = paymentRepository.findPaidTotalByInvoiceId(invoice.getId());
+            invoice.setStatus(InvoiceBalanceCalculator.paymentStatus(invoice.getTotalAmount(), paidTotal));
+        } else {
+            invoice.setStatus(status);
+        }
         Invoice saved = invoiceRepository.save(invoice);
-        return invoiceMapper.toResponse(saved, resolveDetails(saved));
+        return toResponse(saved, resolveDetails(saved));
     }
 
     @Override
@@ -654,7 +695,16 @@ public class InvoiceServiceImpl implements InvoiceService {
     @Override
     @Transactional
     public InvoiceResponse markPaid(Long id) {
-        return updateStatus(id, InvoiceStatus.PAID);
+        securityUtils.requirePermission(PermissionConstants.INVOICE_UPDATE);
+        Invoice invoice = getAccessibleInvoice(id);
+        if (invoice.getStatus() == InvoiceStatus.CANCELLED) {
+            throw new InvalidInvoiceOperationException("A cancelled invoice cannot receive payment");
+        }
+
+        BigDecimal paidTotal = paymentRepository.findPaidTotalByInvoiceId(invoice.getId());
+        invoice.setStatus(InvoiceBalanceCalculator.paymentStatus(invoice.getTotalAmount(), paidTotal));
+        Invoice saved = invoiceRepository.save(invoice);
+        return toResponse(saved, resolveDetails(saved));
     }
 
     @Override
@@ -669,14 +719,67 @@ public class InvoiceServiceImpl implements InvoiceService {
             throw new InvalidInvoiceOperationException("Payment amount must be positive");
         }
 
-        BigDecimal remaining = invoice.getTotalAmount().subtract(invoice.getDiscount());
-        if (paidAmount.compareTo(remaining) >= 0) {
-            invoice.setStatus(InvoiceStatus.PAID);
-        } else {
-            invoice.setStatus(InvoiceStatus.PARTIAL);
-        }
+        BigDecimal paidTotal = paymentRepository.findPaidTotalByInvoiceId(invoice.getId());
+        invoice.setStatus(InvoiceBalanceCalculator.paymentStatus(invoice.getTotalAmount(), paidTotal));
         Invoice saved = invoiceRepository.save(invoice);
-        return invoiceMapper.toResponse(saved, resolveDetails(saved));
+        return toResponse(saved, resolveDetails(saved));
+    }
+
+    // ---- Late fee -----------------------------------------------------
+
+    @Override
+    @Transactional
+    public InvoiceResponse updateLateFee(Long id, BigDecimal lateFee) {
+        securityUtils.requirePermission(PermissionConstants.INVOICE_UPDATE);
+        if (lateFee == null || lateFee.signum() < 0) {
+            throw new InvalidInvoiceOperationException("Late fee must not be negative");
+        }
+        Invoice invoice = getAccessibleInvoice(id);
+        requireLateFeeEditable(invoice);
+        invoice.setLateFee(lateFee.setScale(2, RoundingMode.HALF_UP));
+        applyLateFeeTotals(invoice);
+        Invoice saved = invoiceRepository.save(invoice);
+        return toResponse(saved, resolveDetails(saved));
+    }
+
+    @Override
+    @Transactional
+    public InvoiceResponse recalculateLateFee(Long id) {
+        securityUtils.requirePermission(PermissionConstants.INVOICE_UPDATE);
+        Invoice invoice = getAccessibleInvoice(id);
+        // Always derived from the due date, never incremented, so repeating this is a no-op.
+        applyDefaultLateFee(invoice, LocalDate.now());
+        applyLateFeeTotals(invoice);
+        Invoice saved = invoiceRepository.save(invoice);
+        return toResponse(saved, resolveDetails(saved));
+    }
+
+    /** A paid or cancelled invoice is closed: its stored late fee is left untouched. */
+    private void requireLateFeeEditable(Invoice invoice) {
+        if (invoice.getStatus() == InvoiceStatus.PAID) {
+            throw new InvalidInvoiceOperationException("A paid invoice cannot have its late fee changed");
+        }
+        if (invoice.getStatus() == InvoiceStatus.CANCELLED) {
+            throw new InvalidInvoiceOperationException("A cancelled invoice cannot have its late fee changed");
+        }
+    }
+
+    private void applyDefaultLateFee(Invoice invoice, LocalDate asOf) {
+        if (!InvoiceBalanceCalculator.isLateFeeEligible(invoice.getStatus())) {
+            return;
+        }
+        invoice.setLateFee(InvoiceBalanceCalculator.defaultLateFee(invoice.getDueDate(), asOf));
+    }
+
+    /**
+     * Rebuilds the persisted total from the untouched subtotal and discount, then re-derives
+     * the payment status from PAID payments only. The original subtotal and discount are
+     * never modified by a late-fee change.
+     */
+    private void applyLateFeeTotals(Invoice invoice) {
+        recomputeTotals(invoice);
+        BigDecimal paidTotal = paymentRepository.findPaidTotalByInvoiceId(invoice.getId());
+        invoice.setStatus(InvoiceBalanceCalculator.paymentStatus(invoice.getTotalAmount(), paidTotal));
     }
 
     // ---- Billing context ----------------------------------------------

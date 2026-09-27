@@ -3,6 +3,7 @@ package com.example.spring_boot_project_api.service.impl;
 import com.example.spring_boot_project_api.dto.request.RentalContractRequest;
 import com.example.spring_boot_project_api.dto.response.ContractSummaryResponse;
 import com.example.spring_boot_project_api.dto.response.ExpiringContractSummary;
+import com.example.spring_boot_project_api.dto.response.OwnerContractInfoResponse;
 import com.example.spring_boot_project_api.dto.response.PageResponse;
 import com.example.spring_boot_project_api.dto.response.RentalContractResponse;
 import com.example.spring_boot_project_api.enums.RentalContractStatus;
@@ -13,9 +14,12 @@ import com.example.spring_boot_project_api.exception.RoomNotFoundException;
 import com.example.spring_boot_project_api.mapper.RentalContractMapper;
 import com.example.spring_boot_project_api.model.RentalContract;
 import com.example.spring_boot_project_api.model.Room;
+import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
+import com.example.spring_boot_project_api.repository.UserRepository;
+import com.example.spring_boot_project_api.service.OwnerSettingService;
 import com.example.spring_boot_project_api.service.RentalContractService;
 import com.example.spring_boot_project_api.service.NotificationService;
 import com.example.spring_boot_project_api.service.RoomBookingService;
@@ -38,6 +42,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -56,21 +61,30 @@ public class RentalContractServiceImpl implements RentalContractService {
     private final SecurityUtils securityUtils;
     private final NotificationService notificationService;
     private final RoomBookingService roomBookingService;
+    private final OwnerSettingService ownerSettingService;
+    private final UserRepository userRepository;
 
     @Override
     public RentalContractResponse createContract(RentalContractRequest request) {
         securityUtils.requirePermission(PermissionConstants.CONTRACT_CREATE);
         Long currentUserId = securityUtils.getCurrentUserId();
-        Room targetRoom = resolveAccessibleRoom(request.getRoomId(), currentUserId);
+        Room targetRoom = resolveAccessibleRoomWithLock(request.getRoomId(), currentUserId);
 
-        if (targetRoom.getStatus() == RoomStatus.OCCUPIED || contractRepository.existsByRoomIdAndStatus(request.getRoomId(), RentalContractStatus.ACTIVE)) {
+        if (contractRepository.existsByRoomIdAndStatus(request.getRoomId(), RentalContractStatus.ACTIVE)) {
             throw new DuplicateResourceException("Room " + targetRoom.getRoomNumber() + " is already occupied and cannot be assigned to a new contract.");
+        }
+        Long bookingId = bookingIdForNewContract(targetRoom);
+        if (bookingId != null && contractRepository.existsByBookingId(bookingId)) {
+            throw new DuplicateResourceException("The current booking for room " + targetRoom.getRoomNumber()
+                    + " is already assigned to a rental contract.");
         }
 
         Long ownerId = targetRoom.getOwnerId();
 
         RentalContract contract = contractMapper.toEntity(request);
         contract.setOwnerId(ownerId);
+        snapshotOwnerContractInfo(contract, ownerId);
+        contract.setBookingId(bookingId);
         contract.setContractNo(generateUniqueContractNo());
         applyStatusRules(contract);
         RentalContract savedContract = contractRepository.save(contract);
@@ -189,23 +203,41 @@ public class RentalContractServiceImpl implements RentalContractService {
         securityUtils.requirePermission(PermissionConstants.CONTRACT_UPDATE);
         RentalContract existingContract = getAccessibleContract(id);
         Long currentUserId = securityUtils.getCurrentUserId();
-        Room targetRoom = resolveAccessibleRoom(request.getRoomId(), currentUserId);
+        Room targetRoom = resolveAccessibleRoomWithLock(request.getRoomId(), currentUserId);
+        boolean roomChanged = !existingContract.getRoomId().equals(request.getRoomId());
+        RentalContractStatus previousStatus = existingContract.getStatus();
 
-        if (!existingContract.getRoomId().equals(request.getRoomId())) {
-            Room newRoom = roomRepository.findById(request.getRoomId())
-                    .orElseThrow(() -> RoomNotFoundException.forId(request.getRoomId()));
-            if (newRoom.getStatus() == RoomStatus.OCCUPIED || contractRepository.existsByRoomIdAndStatus(request.getRoomId(), RentalContractStatus.ACTIVE)) {
-                throw new DuplicateResourceException("Room " + newRoom.getRoomNumber() + " is already occupied and cannot be assigned to this contract.");
+        Long bookingId = existingContract.getBookingId();
+        if (roomChanged) {
+            if (contractRepository.existsByRoomIdAndStatus(request.getRoomId(), RentalContractStatus.ACTIVE)) {
+                throw new DuplicateResourceException("Room " + targetRoom.getRoomNumber()
+                        + " is already occupied and cannot be assigned to this contract.");
+            }
+            bookingId = bookingIdForNewContract(targetRoom);
+            if (bookingId != null && contractRepository.existsByBookingId(bookingId)) {
+                throw new DuplicateResourceException("The current booking for room " + targetRoom.getRoomNumber()
+                        + " is already assigned to a rental contract.");
             }
         }
 
         Long ownerId = targetRoom.getOwnerId();
         String existingContractNo = existingContract.getContractNo();
         Long prevRoomId = existingContract.getRoomId();
+        Long previousOwnerId = existingContract.getOwnerId();
         contractMapper.updateEntityFromDto(request, existingContract);
         existingContract.setOwnerId(ownerId);
+        if (!Objects.equals(ownerId, previousOwnerId)) {
+            // Moving a contract to another owner's room changes who signs it, so the
+            // snapshot is re-read. A same-owner update keeps the original snapshot.
+            snapshotOwnerContractInfo(existingContract, ownerId);
+        }
         existingContract.setContractNo(existingContractNo);
+        existingContract.setBookingId(bookingId);
         applyStatusRules(existingContract);
+        if (existingContract.getStatus() == RentalContractStatus.ACTIVE
+                && (previousStatus != RentalContractStatus.ACTIVE || roomChanged)) {
+            ensureRoomCanBecomeActive(existingContract, targetRoom);
+        }
         RentalContract updatedContract = contractRepository.save(existingContract);
         completeBookingWhenContractStarts(updatedContract);
         try {
@@ -224,6 +256,10 @@ public class RentalContractServiceImpl implements RentalContractService {
     public RentalContractResponse updateStatus(Long id, RentalContractStatus status) {
         securityUtils.requirePermission(PermissionConstants.CONTRACT_UPDATE);
         RentalContract contract = getAccessibleContract(id);
+        if (status == RentalContractStatus.ACTIVE && contract.getStatus() != RentalContractStatus.ACTIVE) {
+            Room room = resolveAccessibleRoomWithLock(contract.getRoomId(), securityUtils.getCurrentUserId());
+            ensureRoomCanBecomeActive(contract, room);
+        }
         contract.setStatus(status);
         applyStatusRules(contract);
         RentalContract saved = contractRepository.save(contract);
@@ -286,8 +322,47 @@ public class RentalContractServiceImpl implements RentalContractService {
 
     /** A booking is completed only once the existing rental contract becomes active. */
     private void completeBookingWhenContractStarts(RentalContract contract) {
-        if (contract.getStatus() == RentalContractStatus.ACTIVE) {
-            roomBookingService.completeBookedForRoom(contract.getRoomId());
+        if (contract.getStatus() == RentalContractStatus.ACTIVE && contract.getBookingId() != null) {
+            roomBookingService.completeBookingForContract(contract.getBookingId(), contract.getRoomId());
+        }
+    }
+
+    /**
+     * A new contract may consume an available room or the one current booking
+     * holding a booked room. All other room states are unavailable for contracts.
+     */
+    private Long bookingIdForNewContract(Room room) {
+        if (room.getStatus() == RoomStatus.AVAILABLE) {
+            return null;
+        }
+        if (room.getStatus() == RoomStatus.BOOKED) {
+            return roomBookingService.findCurrentBookingForRoom(room.getId())
+                    .map(booking -> booking.getId())
+                    .orElseThrow(() -> new DuplicateResourceException(
+                            "Booked room " + room.getRoomNumber() + " has no current booking."));
+        }
+        throw new DuplicateResourceException(
+                "Room " + room.getRoomNumber() + " is unavailable and cannot be assigned to a new contract.");
+    }
+
+    private void ensureRoomCanBecomeActive(RentalContract contract, Room room) {
+        if (contractRepository.existsByRoomIdAndStatus(room.getId(), RentalContractStatus.ACTIVE)) {
+            throw new DuplicateResourceException("Room " + room.getRoomNumber()
+                    + " is already occupied and cannot be assigned to a new contract.");
+        }
+        if (contract.getBookingId() == null) {
+            if (room.getStatus() != RoomStatus.AVAILABLE) {
+                throw new DuplicateResourceException("Room " + room.getRoomNumber()
+                        + " is unavailable and cannot be activated for this contract.");
+            }
+            return;
+        }
+        if (room.getStatus() != RoomStatus.BOOKED
+                || roomBookingService.findCurrentBookingForRoom(room.getId())
+                        .filter(booking -> booking.getId().equals(contract.getBookingId()))
+                        .isEmpty()) {
+            throw new DuplicateResourceException("The booking assigned to room " + room.getRoomNumber()
+                    + " is no longer current and cannot be used for this contract.");
         }
     }
 
@@ -323,6 +398,58 @@ public class RentalContractServiceImpl implements RentalContractService {
         }
     }
 
+    /**
+     * Freezes the owner's own contract information (Party A) onto the contract.
+     *
+     * <p>Read once, at creation time, from the owner's settings so that a later
+     * settings change cannot rewrite a contract that was already signed. Optional
+     * details the owner left blank fall back to the matching column on their user
+     * account - name and phone only - so a contract never prints an empty signer.
+     * Party B is not touched here; tenant data comes from the separate
+     * contract-tenant assignment workflow.</p>
+     */
+    private void snapshotOwnerContractInfo(RentalContract contract, Long ownerId) {
+        OwnerContractInfoResponse info = ownerSettingService.getContractInfo(ownerId);
+        if (info == null) {
+            // A missing settings record must never block signing a lease: fall
+            // through to the owner account so the signer is still identified.
+            info = new OwnerContractInfoResponse("", null, null, "", "", "", "", "");
+        }
+        User owner = userRepository.findById(ownerId).orElse(null);
+
+        String fullName = firstNonBlank(info.fullName(), ownerFullName(owner));
+        contract.setOwnerFullName(fullName);
+        contract.setOwnerGender(blankToNull(info.gender() == null ? null : info.gender().name()));
+        contract.setOwnerDateOfBirth(info.dateOfBirth());
+        contract.setOwnerNationality(blankToNull(info.nationality()));
+        contract.setOwnerNationalId(blankToNull(info.nationalId()));
+        contract.setOwnerAddress(blankToNull(info.currentAddress()));
+        contract.setOwnerPhone(firstNonBlank(info.phone(), owner == null ? null : owner.getPhone()));
+        contract.setOwnerOccupation(blankToNull(info.occupation()));
+    }
+
+    private static String ownerFullName(User owner) {
+        if (owner == null) {
+            return null;
+        }
+        String first = owner.getFirstName() == null ? "" : owner.getFirstName().trim();
+        String last = owner.getLastName() == null ? "" : owner.getLastName().trim();
+        return (first + " " + last).trim();
+    }
+
+    private static String firstNonBlank(String preferred, String fallback) {
+        String a = preferred == null ? "" : preferred.trim();
+        return a.isEmpty() ? blankToNull(fallback) : a;
+    }
+
+    private static String blankToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
     private RentalContract getAccessibleContract(Long id) {
         Long currentUserId = securityUtils.getCurrentUserId();
         return contractRepository.findById(id)
@@ -338,6 +465,19 @@ public class RentalContractServiceImpl implements RentalContractService {
 
     private Room resolveAccessibleRoom(Long roomId, Long currentUserId) {
         return roomRepository.findById(roomId)
+                .map(room -> {
+                    if (canAccess(room.getOwnerId(), room.getHouseId(), currentUserId)) {
+                        return room;
+                    }
+                    throw new AccessDeniedException(
+                            "You do not have permission to access this resource");
+                })
+                .orElseThrow(() -> RoomNotFoundException.forId(roomId));
+    }
+
+    /** Locks the room through the contract decision and status update. */
+    private Room resolveAccessibleRoomWithLock(Long roomId, Long currentUserId) {
+        return roomRepository.findWithLockById(roomId)
                 .map(room -> {
                     if (canAccess(room.getOwnerId(), room.getHouseId(), currentUserId)) {
                         return room;

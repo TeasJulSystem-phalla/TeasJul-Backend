@@ -12,6 +12,7 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +24,7 @@ import com.example.spring_boot_project_api.enums.PaymentStatus;
 import com.example.spring_boot_project_api.enums.RoomStatus;
 import com.example.spring_boot_project_api.exception.InvalidReportQueryException;
 import com.example.spring_boot_project_api.model.House;
+import com.example.spring_boot_project_api.model.Invoice;
 import com.example.spring_boot_project_api.model.MaintenanceRequestStatus;
 import com.example.spring_boot_project_api.repository.ContractDepositRepository;
 import com.example.spring_boot_project_api.repository.ContractRenewalRepository;
@@ -36,6 +38,7 @@ import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.UtilityReadingRepository;
 import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.service.ManagerReportService;
+import com.example.spring_boot_project_api.util.InvoiceBalanceCalculator;
 
 import lombok.RequiredArgsConstructor;
 
@@ -216,14 +219,62 @@ public class ManagerReportServiceImpl implements ManagerReportService {
                 periodStart, periodEnd, scopeHouseIds, PaymentStatus.PAID);
         long pendingPayments = paymentRepository.countByHouseIdsAndStatusAndCreatedAtRange(
                 periodStart, periodEnd, scopeHouseIds, PaymentStatus.PENDING);
-        // "Overdue payments" maps to invoices billed for the month that are still
-        // overdue — there is no OVERDUE value in the payment status enum.
-        long overduePayments = invoiceRepository.countByYearMonthHouseIdsAndStatus(
-                ym.getYear(), ym.getMonthValue(), scopeHouseIds, InvoiceStatus.OVERDUE);
+        // "Overdue payments" counts the invoices billed for the month that are past their due
+        // date and still owe money. It stays a count, and it is derived rather than read from
+        // InvoiceStatus.OVERDUE, which the invoice lifecycle never persists.
+        long overduePayments = countOverdueInvoices(ym, scopeHouseIds);
         BigDecimal totalPaymentAmount = paymentRepository.sumPaidAmountByHouseIdsAndPaidAtRange(
                 periodStart, periodEnd, scopeHouseIds);
         return new ManagerMonthlyReportResponse.PaymentSummary(
                 paidPayments, pendingPayments, overduePayments, totalPaymentAmount);
+    }
+
+    /**
+     * Counts the month's invoices that are past their due date and still owe money. PAID
+     * payment totals come from a single grouped query, so no per-invoice lookup is added.
+     */
+    private long countOverdueInvoices(YearMonth ym, List<Long> scopeHouseIds) {
+        if (scopeHouseIds == null || scopeHouseIds.isEmpty()) {
+            return 0L;
+        }
+        List<Invoice> invoices = invoiceRepository.findByYearMonthHouseIds(
+                ym.getYear(), ym.getMonthValue(), scopeHouseIds);
+        if (invoices.isEmpty()) {
+            return 0L;
+        }
+        List<Long> invoiceIds = invoices.stream()
+                .map(Invoice::getId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, BigDecimal> paidByInvoice = new HashMap<>();
+        List<Object[]> rows = invoiceIds.isEmpty()
+                ? List.of()
+                : paymentRepository.sumPaidAmountByInvoiceIds(invoiceIds, PaymentStatus.PAID);
+        if (rows != null) {
+            for (Object[] row : rows) {
+                if (row == null || row.length < 2 || row[0] == null) {
+                    continue;
+                }
+                BigDecimal amount = row[1] instanceof BigDecimal value
+                        ? value : new BigDecimal(row[1].toString());
+                paidByInvoice.put(((Number) row[0]).longValue(), amount);
+            }
+        }
+
+        LocalDate today = LocalDate.now();
+        long count = 0L;
+        for (Invoice invoice : invoices) {
+            if (invoice.getStatus() == InvoiceStatus.CANCELLED) {
+                continue;
+            }
+            BigDecimal remaining = InvoiceBalanceCalculator.remainingBalance(
+                    invoice.getTotalAmount(), paidByInvoice.get(invoice.getId()));
+            if (InvoiceBalanceCalculator.isOverdue(invoice.getDueDate(), remaining, today)) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private ManagerMonthlyReportResponse.UtilitySummary utilitySummary(YearMonth ym,

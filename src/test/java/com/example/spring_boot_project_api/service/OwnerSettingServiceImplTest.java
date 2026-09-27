@@ -4,11 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -22,9 +24,13 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.security.access.AccessDeniedException;
 
+import com.example.spring_boot_project_api.dto.request.UpdateOwnerContractInfoRequest;
 import com.example.spring_boot_project_api.dto.request.UpdateOwnerSettingsRequest;
 import com.example.spring_boot_project_api.dto.request.UpdateThemeRequest;
+import com.example.spring_boot_project_api.dto.response.OwnerContractInfoResponse;
+import com.example.spring_boot_project_api.dto.response.OwnerSettingsResponse;
 import com.example.spring_boot_project_api.dto.response.ThemeSettingsResponse;
+import com.example.spring_boot_project_api.model.Gender;
 import com.example.spring_boot_project_api.model.OwnerSetting;
 import com.example.spring_boot_project_api.model.Tenant;
 import com.example.spring_boot_project_api.model.User;
@@ -340,8 +346,195 @@ class OwnerSettingServiceImplTest {
                 "Business", "", "", "", "", "#3b82f6", "#10b981",
                 "KM",
                 "INV", 10, "", true, true, true, true,
-                "កិច្ចសន្យាជួលផ្ទះ", "", "", "", "", "KM",
+                "កិច្ចសន្យាជួលផ្ទះ", "", "", "", "", "KM", null,
                 "RCP", "KM", "", true, true, true, true,
                 "", "");
+    }
+
+    // ---- Contract Party A: the owner's own identity on rental agreements ----
+
+    private UpdateOwnerContractInfoRequest contractParty(String fullName, Gender gender,
+            LocalDate dob, String nationality, String nationalId, String address,
+            String phone, String occupation) {
+        return new UpdateOwnerContractInfoRequest(
+                fullName, gender, dob, nationality, nationalId, address, phone, occupation);
+    }
+
+    private UpdateOwnerSettingsRequest settingsWithParty(UpdateOwnerContractInfoRequest party) {
+        return new UpdateOwnerSettingsRequest(
+                "USD", "USD", new BigDecimal("4100"), "DD/MM/YYYY", "Asia/Phnom_Penh",
+                "Business", "", "", "", "", "#3b82f6", "#10b981",
+                "KM",
+                "INV", 10, "", true, true, true, true,
+                "កិច្ចសន្យាជួលផ្ទះ", "", "", "", "", "KM", party,
+                "RCP", "KM", "", true, true, true, true,
+                "", "");
+    }
+
+    @Test
+    void getSettings_returnsOwnConfiguredContractParty() {
+        ownerSettingService.updateSettings(settingsWithParty(contractParty(
+                "  សុភា សុខាជ  ", Gender.FEMALE, LocalDate.of(1990, 5, 20),
+                " ខ្មែរ ", "  N012345678 ", "  ភ្នំពេញ  ", " 012111222 ", " អាជីវករ ")));
+
+        OwnerSettingsResponse response = ownerSettingService.getSettings();
+
+        OwnerContractInfoResponse party = response.contractParty();
+        assertThat(party.fullName()).isEqualTo("សុភា សុខាជ");
+        assertThat(party.gender()).isEqualTo(Gender.FEMALE);
+        assertThat(party.dateOfBirth()).isEqualTo(LocalDate.of(1990, 5, 20));
+        assertThat(party.nationality()).isEqualTo("ខ្មែរ");
+        assertThat(party.nationalId()).isEqualTo("N012345678");
+        assertThat(party.currentAddress()).isEqualTo("ភ្នំពេញ");
+        assertThat(party.phone()).isEqualTo("012111222");
+        assertThat(party.occupation()).isEqualTo("អាជីវករ");
+    }
+
+    @Test
+    void updateSettings_persistsTrimmedContractPartyAndReturnsIt() {
+        OwnerSettingsResponse response = ownerSettingService.updateSettings(settingsWithParty(
+                contractParty("  Sokha  ", Gender.MALE, null, "  ខ្មែរ  ", "  ID-1  ",
+                        "  Street 1  ", "  012999888  ", "  គ្រូ  ")));
+
+        assertThat(response.contractParty().fullName()).isEqualTo("Sokha");
+        assertThat(response.contractParty().nationalId()).isEqualTo("ID-1");
+        assertThat(response.contractParty().phone()).isEqualTo("012999888");
+        assertThat(response.contractParty().occupation()).isEqualTo("គ្រូ");
+        assertThat(setting.getSettings())
+                .contains("\"contractParty\"")
+                .contains("\"fullName\":\"Sokha\"")
+                .contains("\"phone\":\"012999888\"")
+                .contains("\"gender\":\"MALE\"");
+    }
+
+    @Test
+    void updateSettings_allowsOptionalContractPartyFieldsToStayEmpty() {
+        OwnerSettingsResponse response = ownerSettingService.updateSettings(settingsWithParty(
+                contractParty(null, null, null, "  ", "", null, "  ", "")));
+
+        OwnerContractInfoResponse party = response.contractParty();
+        assertThat(party.fullName()).isEmpty();
+        assertThat(party.gender()).isNull();
+        assertThat(party.dateOfBirth()).isNull();
+        assertThat(party.nationality()).isEmpty();
+        assertThat(party.nationalId()).isEmpty();
+        assertThat(party.currentAddress()).isEmpty();
+        assertThat(party.phone()).isEmpty();
+        assertThat(party.occupation()).isEmpty();
+    }
+
+    @Test
+    void updateSettings_preservesContractPartyWhenRequestOmitsIt() {
+        ownerSettingService.updateSettings(settingsWithParty(contractParty(
+                "Sokha", Gender.MALE, null, "ខ្មែរ", "ID-1", "Street 1", "012111222", "គ្រូ")));
+
+        ownerSettingService.updateSettings(fullSettingsRequest());
+
+        OwnerContractInfoResponse party = ownerSettingService.getSettings().contractParty();
+        assertThat(party.fullName()).isEqualTo("Sokha");
+        assertThat(party.phone()).isEqualTo("012111222");
+        assertThat(party.nationalId()).isEqualTo("ID-1");
+    }
+
+    @Test
+    void getSettings_byNonOwner_isForbidden() {
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(false);
+
+        assertThatThrownBy(() -> ownerSettingService.getSettings())
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void updateSettings_byNonOwner_isForbiddenAndSavesNothing() {
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(false);
+
+        assertThatThrownBy(() -> ownerSettingService.updateSettings(
+                settingsWithParty(contractParty("Intruder", null, null, null, null, null, null, null))))
+                .isInstanceOf(AccessDeniedException.class);
+
+        verify(ownerSettingRepository, never()).save(any());
+    }
+
+    @Test
+    void contractParty_isAlwaysReadFromTheAuthenticatedOwnersOwnRow() {
+        when(securityUtils.getCurrentUser()).thenReturn(owner);
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(true);
+        ownerSettingService.updateSettings(settingsWithParty(contractParty(
+                "Sokha", null, null, null, null, null, "012111222", null)));
+
+        ownerSettingService.getSettings();
+
+        // The request carries no owner id, so there is no way to address another
+        // owner's row: only the authenticated owner's id is ever looked up.
+        verify(ownerSettingRepository, never()).findByOwnerId(999L);
+        verify(ownerSettingRepository, atLeastOnce()).findByOwnerId(5L);
+    }
+
+    @Test
+    void getSettings_seedsContractPartyFromOwnerAccountOnFirstLoad() {
+        User newOwner = User.builder().id(7L).username("owner7").email("o7@test.com")
+                .firstName("Dara").lastName("Sok").phone("011222333").build();
+        when(securityUtils.getCurrentUser()).thenReturn(newOwner);
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(true);
+        when(ownerSettingRepository.findByOwnerId(7L)).thenReturn(Optional.empty());
+        when(ownerSettingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        OwnerSettingsResponse response = ownerSettingService.getSettings();
+
+        assertThat(response.contractParty().fullName()).isEqualTo("Dara Sok");
+        assertThat(response.contractParty().phone()).isEqualTo("011222333");
+        assertThat(response.contractParty().gender()).isNull();
+    }
+
+    // ---- Accessor consumed by rental-contract creation ----
+
+    @Test
+    void getContractInfo_returnsConfiguredInfoForTheGivenOwner() {
+        ownerSettingService.updateSettings(settingsWithParty(contractParty(
+                "Sokha", Gender.MALE, LocalDate.of(1985, 1, 2), "ខ្មែរ", "ID-9",
+                "Street 9", "012111222", "គ្រូ")));
+
+        OwnerContractInfoResponse info = ownerSettingService.getContractInfo(5L);
+
+        assertThat(info.fullName()).isEqualTo("Sokha");
+        assertThat(info.gender()).isEqualTo(Gender.MALE);
+        assertThat(info.dateOfBirth()).isEqualTo(LocalDate.of(1985, 1, 2));
+        assertThat(info.nationality()).isEqualTo("ខ្មែរ");
+        assertThat(info.nationalId()).isEqualTo("ID-9");
+        assertThat(info.currentAddress()).isEqualTo("Street 9");
+        assertThat(info.phone()).isEqualTo("012111222");
+        assertThat(info.occupation()).isEqualTo("គ្រូ");
+    }
+
+    @Test
+    void getContractInfo_returnsBlanks_whenOwnerHasNoSettingsRow() {
+        when(ownerSettingRepository.findByOwnerId(5L)).thenReturn(Optional.empty());
+
+        OwnerContractInfoResponse info = ownerSettingService.getContractInfo(5L);
+
+        assertThat(info.fullName()).isEmpty();
+        assertThat(info.gender()).isNull();
+        assertThat(info.dateOfBirth()).isNull();
+        assertThat(info.phone()).isEmpty();
+    }
+
+    @Test
+    void getContractInfo_returnsBlanks_whenOwnerIdIsNull() {
+        OwnerContractInfoResponse info = ownerSettingService.getContractInfo(null);
+
+        assertThat(info.fullName()).isEmpty();
+        verify(ownerSettingRepository, never()).findByOwnerId(any());
+    }
+
+    @Test
+    void getContractInfo_toleratesSettingsDocumentWithoutContractPartyBlock() {
+        when(ownerSettingRepository.findByOwnerId(5L)).thenReturn(Optional.of(
+                OwnerSetting.builder().id(1L).owner(owner)
+                        .settings("{\"baseCurrency\":\"USD\"}").build()));
+
+        OwnerContractInfoResponse info = ownerSettingService.getContractInfo(5L);
+
+        assertThat(info.fullName()).isEmpty();
+        assertThat(info.occupation()).isEmpty();
     }
 }

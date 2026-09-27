@@ -62,6 +62,7 @@ import com.example.spring_boot_project_api.model.UtilityType;
 import com.example.spring_boot_project_api.repository.ContractTenantRepository;
 import com.example.spring_boot_project_api.repository.HouseRepository;
 import com.example.spring_boot_project_api.repository.InvoiceRepository;
+import com.example.spring_boot_project_api.repository.PaymentRepository;
 import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.repository.RoomUtilityRepository;
@@ -79,6 +80,7 @@ import com.example.spring_boot_project_api.util.SecurityUtils;
 class InvoiceServiceImplTest {
 
     @Mock private InvoiceRepository invoiceRepository;
+    @Mock private PaymentRepository paymentRepository;
     @Mock private InvoiceMapper invoiceMapper;
     @Mock private RentalContractRepository contractRepository;
     @Mock private RoomRepository roomRepository;
@@ -122,6 +124,7 @@ class InvoiceServiceImplTest {
         when(ownerSettingService.getExchangeRate(any())).thenReturn(new BigDecimal("4100"));
         when(ownerSettingService.getInvoicePrefix(any())).thenReturn("INV");
         when(ownerSettingService.getInvoiceDefaultDueDays(any())).thenReturn(5);
+        when(paymentRepository.findPaidTotalByInvoiceId(any())).thenReturn(BigDecimal.ZERO);
     }
 
     @AfterEach
@@ -599,7 +602,7 @@ class InvoiceServiceImplTest {
                     .build();
         });
 
-        when(invoiceMapper.toResponse(any(Invoice.class), any(Object[].class)))
+        when(invoiceMapper.toResponse(any(Invoice.class), any(Object[].class), any(BigDecimal.class)))
                 .thenAnswer(inv -> {
                     Invoice in = inv.getArgument(0);
                     return new com.example.spring_boot_project_api.dto.response.InvoiceResponse(
@@ -607,7 +610,8 @@ class InvoiceServiceImplTest {
                             in.getContractId(), "CT", null, null, null, null, null, null,
                             in.getBillingYear(), in.getBillingMonth(), in.getDueDate(),
                             in.getSubtotal(), in.getDiscount(), in.getLateFee(),
-                            in.getTotalAmount(), in.getStatus(), null, null, null, null, List.of());
+                            in.getTotalAmount(), BigDecimal.ZERO, in.getTotalAmount(),
+                            in.getStatus(), null, null, null, null, List.of());
                 });
 
         // Invoice number counting
