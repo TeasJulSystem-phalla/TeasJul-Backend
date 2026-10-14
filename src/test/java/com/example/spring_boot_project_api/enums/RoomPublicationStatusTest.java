@@ -20,6 +20,11 @@ class RoomPublicationStatusTest {
     @Test
     void isSeparateFromRoomStatus() {
         assertThat(RoomStatus.values())
-            .containsExactly(RoomStatus.AVAILABLE, RoomStatus.OCCUPIED, RoomStatus.MAINTENANCE, RoomStatus.RESERVED);
+            .containsExactly(
+                RoomStatus.AVAILABLE,
+                RoomStatus.BOOKED,
+                RoomStatus.OCCUPIED,
+                RoomStatus.MAINTENANCE,
+                RoomStatus.RESERVED);
     }
 }

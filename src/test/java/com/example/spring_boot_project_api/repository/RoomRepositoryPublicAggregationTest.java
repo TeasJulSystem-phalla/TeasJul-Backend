@@ -154,16 +154,26 @@ class RoomRepositoryPublicAggregationTest {
                 RoomStatus.AVAILABLE, RoomPublicationStatus.PUBLISHED, "170.00");
         entityManager.flush();
 
+        // "Similar rooms" is intentionally a global public search across every
+        // published + available listing, so on the shared test database the page
+        // also contains unrelated groups that can outrank this fixture by price
+        // proximity. Query a full page and assert on the groups this test seeded.
         var result = roomRepository.findSimilarRoomGroups(
                 currentHouse.getId(), currentType.getId(), new BigDecimal("150.00"),
-                RoomPublicationStatus.PUBLISHED, RoomStatus.AVAILABLE, PageRequest.of(0, 4));
+                RoomPublicationStatus.PUBLISHED, RoomStatus.AVAILABLE, PageRequest.of(0, 1000));
 
-        assertThat(result).hasSize(4);
-        assertThat(result).noneMatch(group -> currentHouse.getId().equals(group.getHouseId())
+        var fixtureGroups = result.stream()
+                .filter(group -> java.util.Set.of(
+                        currentHouse.getId(), houseB.getId(), houseC.getId(), houseD.getId())
+                        .contains(group.getHouseId()))
+                .toList();
+
+        assertThat(fixtureGroups).hasSize(4);
+        assertThat(fixtureGroups).noneMatch(group -> currentHouse.getId().equals(group.getHouseId())
                 && currentType.getId().equals(group.getRoomTypeId()));
-        assertThat(result).extracting(PublicRoomGroupProjection::getHouseId)
+        assertThat(fixtureGroups).extracting(PublicRoomGroupProjection::getHouseId)
                 .contains(currentHouse.getId());
-        assertThat(result).anySatisfy(group -> {
+        assertThat(fixtureGroups).anySatisfy(group -> {
             assertThat(group.getHouseId()).isEqualTo(currentHouse.getId());
             assertThat(group.getRoomTypeId()).isEqualTo(alternateType.getId());
             assertThat(group.getAvailableRoomCount()).isEqualTo(2L);

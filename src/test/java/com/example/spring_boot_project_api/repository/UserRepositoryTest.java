@@ -151,7 +151,10 @@ class UserRepositoryTest {
         Page<User> byPhone = userRepository.findAllOwners("099_" + suffix, null, PageRequest.of(0, 10));
         assertThat(byPhone.getContent()).extracting(User::getId).contains(owner.getId());
 
-        Page<User> allOwners = userRepository.findAllOwners(null, null, PageRequest.of(0, 10));
+        // The unfiltered owner list runs on the shared test database, which already
+        // contains more owners than the default page size; use a full page so the
+        // freshly created owner is guaranteed to be part of the result set.
+        Page<User> allOwners = userRepository.findAllOwners(null, null, PageRequest.of(0, 1000));
         assertThat(allOwners.getContent()).extracting(User::getId).contains(owner.getId());
     }
 
