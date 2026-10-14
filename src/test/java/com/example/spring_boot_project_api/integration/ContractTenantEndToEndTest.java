@@ -34,7 +34,7 @@ import com.example.spring_boot_project_api.repository.TenantRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.ContractTenantService;
 
-@SpringBootTest
+@SpringBootTest(properties = "jwt.secret=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 class ContractTenantEndToEndTest {
 
     @Autowired private ContractTenantService contractTenantService;

@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +20,7 @@ import com.example.spring_boot_project_api.repository.ExpenseRepository;
 import com.example.spring_boot_project_api.repository.HouseRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.ExpenseService;
+import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.util.PermissionConstants;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
@@ -30,6 +32,10 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ExpenseServiceImpl implements ExpenseService {
+
+    private static final String ACCESS_DENIED_MSG =
+            "You do not have permission to access this resource";
+
     private final ExpenseRepository expenseRepository;
     private final UserRepository userRepository;
     private final HouseRepository houseRepository;
@@ -37,12 +43,14 @@ public class ExpenseServiceImpl implements ExpenseService {
     // private final PaymentMethodRepository paymentMethodRepository;
     private final ExpenseMapper mapper;
     private final SecurityUtils securityUtils;
+    private final HouseAccessService houseAccessService;
 
     @Override
     @Transactional
     public ExpenseResponse create(ExpenseRequest request) {
         securityUtils.requirePermission(PermissionConstants.EXPENSE_CREATE);
         Long ownerId = request.ownerId();
+        requireOwnerScope(ownerId);
 
         // 1. Validate Owner
         User owner = userRepository.findById(ownerId)
@@ -71,12 +79,8 @@ public class ExpenseServiceImpl implements ExpenseService {
         //             .orElseThrow(() -> new IllegalArgumentException("Payment Method ID " + request.paymentMethodId() + " does not belong to owner ID " + ownerId));
         // }
 
-        // 6. Creator User (Optional)
-        User createdBy = null;
-        if (request.createdById() != null) {
-            createdBy = userRepository.findById(request.createdById())
-                    .orElseThrow(() -> new EntityNotFoundException("Creator user not found with ID: " + request.createdById()));
-        }
+        // 6. Creator is the authenticated user (client-supplied createdById is never trusted)
+        User createdBy = securityUtils.getCurrentUser();
 
         Expense entity = mapper.toEntity(request, owner, house, category, createdBy);
         Expense savedEntity = expenseRepository.save(entity);
@@ -86,6 +90,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     public ExpenseResponse getByIdAndOwnerId(Long id, Long ownerId) {
         securityUtils.requirePermission(PermissionConstants.EXPENSE_VIEW);
+        requireOwnerScope(ownerId);
         Expense entity = expenseRepository.findByIdAndOwnerId(id, ownerId)
                 .orElseThrow(() -> new EntityNotFoundException("Expense not found with ID: " + id + " for owner: " + ownerId));
         return mapper.toResponse(entity);
@@ -94,6 +99,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     public List<ExpenseResponse> getAllByOwnerId(Long ownerId) {
         securityUtils.requirePermission(PermissionConstants.EXPENSE_VIEW);
+        requireOwnerScope(ownerId);
         return expenseRepository.findByOwnerId(ownerId)
                 .stream()
                 .map(mapper::toResponse)
@@ -103,6 +109,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     public Page<ExpenseResponse> getAllByOwnerId(Long ownerId, Pageable pageable) {
         securityUtils.requirePermission(PermissionConstants.EXPENSE_VIEW);
+        requireOwnerScope(ownerId);
         return expenseRepository.findByOwnerId(ownerId, pageable)
                 .map(mapper::toResponse);
     }
@@ -112,6 +119,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     public ExpenseResponse update(Long id, ExpenseRequest request) {
         securityUtils.requirePermission(PermissionConstants.EXPENSE_UPDATE);
         Long ownerId = request.ownerId();
+        requireOwnerScope(ownerId);
 
         Expense existingExpense = expenseRepository.findByIdAndOwnerId(id, ownerId)
                 .orElseThrow(() -> new EntityNotFoundException("Expense not found with ID: " + id + " for owner: " + ownerId));
@@ -154,8 +162,30 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Transactional
     public void delete(Long id, Long ownerId) {
         securityUtils.requirePermission(PermissionConstants.EXPENSE_DELETE);
+        requireOwnerScope(ownerId);
         Expense expense = expenseRepository.findByIdAndOwnerId(id, ownerId)
                 .orElseThrow(() -> new EntityNotFoundException("Expense not found with ID: " + id + " for owner: " + ownerId));
         expenseRepository.delete(expense);
+    }
+
+    /**
+     * Ensures the current user may act on resources owned by {@code ownerId}:
+     * SUPER_ADMIN may act on any owner, an OWNER only on their own resources, and
+     * a MANAGER only on owners reachable through their managed houses. The
+     * client-supplied {@code ownerId} is validated against this scope, never
+     * trusted as proof of authorization.
+     */
+    private void requireOwnerScope(Long ownerId) {
+        if (ownerId == null) {
+            throw new AccessDeniedException(ACCESS_DENIED_MSG);
+        }
+        if (securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)) {
+            return;
+        }
+        if (ownerId.equals(securityUtils.getCurrentUserId())
+                || houseAccessService.getScopedOwnerIds().contains(ownerId)) {
+            return;
+        }
+        throw new AccessDeniedException(ACCESS_DENIED_MSG);
     }
 }

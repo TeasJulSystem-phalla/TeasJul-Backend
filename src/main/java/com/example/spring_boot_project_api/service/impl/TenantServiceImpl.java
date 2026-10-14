@@ -9,6 +9,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
@@ -59,10 +60,14 @@ public class TenantServiceImpl implements TenantService {
             tenantUser = userRepository.findById(request.userId())
                     .orElseThrow(() -> UserNotFoundException.forId(request.userId()));
 
+            // The linked account must fall inside the caller's authorized scope, so
+            // an OWNER/MANAGER can never attach a user they do not manage to a
+            // tenant profile. Owner attribution below is always server-derived.
+            requireUserWithinCallerScope(tenantUser.getId());
+
             // A user account can be linked to at most one tenant profile.
             if (tenantRepository.findByUserId(tenantUser.getId()).isPresent()) {
-                throw new DuplicateResourceException(
-                        "User already has a tenant profile: " + tenantUser.getUsername());
+                throw new DuplicateResourceException("User already has a tenant profile");
             }
         }
 
@@ -233,6 +238,29 @@ public class TenantServiceImpl implements TenantService {
         return userRepository.findByUsername(userDetails.getUsername())
                 .or(() -> userRepository.findByEmail(userDetails.getUsername()))
                 .orElseThrow(() -> UserNotFoundException.forId(null));
+    }
+
+    /**
+     * A linked user account must be inside the caller's authorized scope. A
+     * SUPER_ADMIN is unrestricted; an OWNER or MANAGER may only link a user they
+     * can manage, reusing the same ownership scope as user management (see
+     * {@code HouseAccessService}). Owner attribution itself is never taken from
+     * the request.
+     */
+    private void requireUserWithinCallerScope(Long userId) {
+        if (securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)) {
+            return;
+        }
+        Long selfId = securityUtils.getCurrentUserId();
+        if (selfId != null && selfId.equals(userId)) {
+            return;
+        }
+        boolean inScope = userRepository.existsInOwnerScope(userId, selfId,
+                houseAccessService.getScopedOwnerIds(),
+                houseAccessService.getAccessibleHouseIds());
+        if (!inScope) {
+            throw new AccessDeniedException("You do not have permission to access this resource");
+        }
     }
 
     private Specification<Tenant> tenantFilters(Long ownerId, List<Long> houseIds, String q, TenantStatus status) {

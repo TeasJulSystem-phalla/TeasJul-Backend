@@ -35,7 +35,7 @@ import org.mockito.ArgumentCaptor;
  * in plaintext); this verifies the OTP is hashed, delivered, and consumed, and
  * that account enumeration is prevented.
  */
-@SpringBootTest
+@SpringBootTest(properties = "jwt.secret=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 class PasswordRecoveryEndToEndTest {
 
     @Autowired private SecurityService securityService;

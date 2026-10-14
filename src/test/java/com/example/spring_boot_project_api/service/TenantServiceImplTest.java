@@ -3,6 +3,9 @@ package com.example.spring_boot_project_api.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -97,6 +100,12 @@ class TenantServiceImplTest {
                 .createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now()).build();
     }
 
+    private User manager() {
+        return User.builder().id(2L).username("managerA").email("managerA@example.com")
+                .passwordHash("h").firstName("Manager").lastName("A").status(UserStatus.ACTIVE)
+                .createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now()).build();
+    }
+
     private CreateTenantRequest request(Long userId) {
         return new CreateTenantRequest(
                 userId,
@@ -125,9 +134,15 @@ class TenantServiceImplTest {
     }
 
     @Test
-    void createTenantLinksExistingUser() {
+    void createTenantLinksExistingUserWithinScope() {
         authAs(owner);
         User candidate = candidateUser();
+        when(securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(false);
+        when(securityUtils.getCurrentUserId()).thenReturn(owner.getId());
+        when(houseAccessService.getScopedOwnerIds()).thenReturn(List.of(owner.getId()));
+        when(houseAccessService.getAccessibleHouseIds()).thenReturn(List.of(10L));
+        when(userRepository.existsInOwnerScope(eq(25L), eq(owner.getId()),
+                anyCollection(), anyCollection())).thenReturn(true);
         when(userRepository.findById(25L)).thenReturn(Optional.of(candidate));
         when(tenantRepository.findByUserId(25L)).thenReturn(Optional.empty());
         when(tenantRepository.existsByOwnerIdAndTenantCode(1L, "TN-100")).thenReturn(false);
@@ -143,6 +158,82 @@ class TenantServiceImplTest {
         assertThat(response.userId()).isEqualTo(25L);
         assertThat(response.ownerId()).isEqualTo(1L);
         assertThat(response.tenantCode()).isEqualTo("TN-100");
+    }
+
+    @Test
+    void createTenantCannotLinkUserOutsideCallerScope() {
+        authAs(owner);
+        User candidate = candidateUser();
+        when(securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(false);
+        when(securityUtils.getCurrentUserId()).thenReturn(owner.getId());
+        when(houseAccessService.getScopedOwnerIds()).thenReturn(List.of(owner.getId()));
+        when(houseAccessService.getAccessibleHouseIds()).thenReturn(List.of(10L));
+        when(userRepository.findById(25L)).thenReturn(Optional.of(candidate));
+        when(userRepository.existsInOwnerScope(eq(25L), eq(owner.getId()),
+                anyCollection(), anyCollection())).thenReturn(false);
+
+        assertThatThrownBy(() -> tenantService.createTenant(request(25L)))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        verify(tenantRepository, never()).save(any());
+    }
+
+    @Test
+    void createTenantManagerCanLinkUserWithinManagedScope() {
+        User manager = manager();
+        authAs(manager);
+        User candidate = candidateUser();
+        when(securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(false);
+        when(securityUtils.getCurrentUserId()).thenReturn(manager.getId());
+        when(houseAccessService.getScopedOwnerIds()).thenReturn(List.of(owner.getId()));
+        when(houseAccessService.getAccessibleHouseIds()).thenReturn(List.of(10L));
+        when(userRepository.existsInOwnerScope(eq(25L), eq(manager.getId()),
+                anyCollection(), anyCollection())).thenReturn(true);
+        when(userRepository.findById(25L)).thenReturn(Optional.of(candidate));
+        when(tenantRepository.findByUserId(25L)).thenReturn(Optional.empty());
+        when(tenantRepository.existsByOwnerIdAndTenantCode(2L, "TN-100")).thenReturn(false);
+        when(tenantRepository.existsByOwnerIdAndPhone(2L, "012345678")).thenReturn(false);
+        when(tenantRepository.save(any(Tenant.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TenantResponse response = tenantService.createTenant(request(25L));
+
+        assertThat(response.userId()).isEqualTo(25L);
+        assertThat(response.ownerId()).isEqualTo(2L);
+    }
+
+    @Test
+    void createTenantManagerCannotLinkUserOutsideManagedScope() {
+        User manager = manager();
+        authAs(manager);
+        User candidate = candidateUser();
+        when(securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(false);
+        when(securityUtils.getCurrentUserId()).thenReturn(manager.getId());
+        when(houseAccessService.getScopedOwnerIds()).thenReturn(List.of());
+        when(houseAccessService.getAccessibleHouseIds()).thenReturn(List.of());
+        when(userRepository.findById(25L)).thenReturn(Optional.of(candidate));
+        when(userRepository.existsInOwnerScope(eq(25L), eq(manager.getId()),
+                anyCollection(), anyCollection())).thenReturn(false);
+
+        assertThatThrownBy(() -> tenantService.createTenant(request(25L)))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        verify(tenantRepository, never()).save(any());
+    }
+
+    @Test
+    void createTenantSuperAdminCanLinkAnyUser() {
+        authAs(owner);
+        User candidate = candidateUser();
+        when(securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(true);
+        when(userRepository.findById(25L)).thenReturn(Optional.of(candidate));
+        when(tenantRepository.findByUserId(25L)).thenReturn(Optional.empty());
+        when(tenantRepository.existsByOwnerIdAndTenantCode(1L, "TN-100")).thenReturn(false);
+        when(tenantRepository.existsByOwnerIdAndPhone(1L, "012345678")).thenReturn(false);
+        when(tenantRepository.save(any(Tenant.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TenantResponse response = tenantService.createTenant(request(25L));
+
+        assertThat(response.userId()).isEqualTo(25L);
+        verify(userRepository, never()).existsInOwnerScope(anyLong(), anyLong(),
+                anyCollection(), anyCollection());
     }
 
     @Test
@@ -174,14 +265,16 @@ class TenantServiceImplTest {
     }
 
     @Test
-    void createTenantRejectsUserAlreadyLinked() {
+    void createTenantRejectsUserAlreadyLinkedWithoutDisclosingUsername() {
         authAs(owner);
         User candidate = candidateUser();
+        when(securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(true);
         when(userRepository.findById(25L)).thenReturn(Optional.of(candidate));
         when(tenantRepository.findByUserId(25L)).thenReturn(Optional.of(Tenant.builder().id(1L).build()));
 
         assertThatThrownBy(() -> tenantService.createTenant(request(25L)))
-                .isInstanceOf(DuplicateResourceException.class);
+                .isInstanceOf(DuplicateResourceException.class)
+                .hasMessageNotContaining(candidate.getUsername());
         verify(tenantRepository, never()).save(any());
     }
 

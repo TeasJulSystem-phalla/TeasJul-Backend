@@ -189,10 +189,13 @@ public class UserServiceImpl implements UserService, UserDetailsService {
                 pageable.getSort());
 
         Page<User> page;
-        if (isSuperAdmin() || isManager()) {
-            // SUPER_ADMIN and MANAGER keep their existing unrestricted candidate pool.
+        if (isSuperAdmin()) {
+            // Only a SUPER_ADMIN may search the platform-wide candidate pool.
             page = userRepository.findAvailableForTenant(normalize(q), capped);
         } else {
+            // OWNER and MANAGER are confined to their own ownership scope, matching
+            // the user-management authorization rules. A MANAGER must never be able
+            // to enumerate users outside the owners/houses they manage.
             OwnerScope scope = currentOwnerScope();
             page = userRepository.findAvailableForTenantInOwnerScope(normalize(q),
                     scope.selfId(), scope.ownerIds(), scope.houseIds(), capped);

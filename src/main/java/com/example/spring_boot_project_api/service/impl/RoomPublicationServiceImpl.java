@@ -15,6 +15,7 @@ import com.example.spring_boot_project_api.exception.RoomNotFoundException;
 import com.example.spring_boot_project_api.model.Room;
 import com.example.spring_boot_project_api.repository.RoomRepository;
 import com.example.spring_boot_project_api.service.RoomPublicationService;
+import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.service.NotificationService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
@@ -42,6 +43,7 @@ public class RoomPublicationServiceImpl implements RoomPublicationService {
 
     private final RoomRepository roomRepository;
     private final SecurityUtils securityUtils;
+    private final HouseAccessService houseAccessService;
     private final NotificationService notificationService;
 
     @Override
@@ -185,8 +187,12 @@ public class RoomPublicationServiceImpl implements RoomPublicationService {
     private Room getAccessibleRoom(Long roomId) {
         Room room = getRoom(roomId);
         Long currentUserId = securityUtils.getCurrentUserId();
-        if (room.getOwnerId().equals(currentUserId)
-                || securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)) {
+        if (room.getOwnerId() != null && room.getOwnerId().equals(currentUserId)) {
+            return room;
+        }
+        if (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)
+                && room.getHouseId() != null
+                && houseAccessService.canManageHouse(room.getHouseId())) {
             return room;
         }
         throw new AccessDeniedException(ACCESS_DENIED_MSG);

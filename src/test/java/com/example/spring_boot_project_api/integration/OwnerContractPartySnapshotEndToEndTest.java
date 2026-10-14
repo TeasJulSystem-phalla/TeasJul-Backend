@@ -50,7 +50,7 @@ import com.example.spring_boot_project_api.util.SecurityUtils;
  * a mock: the owner's settings are saved, a contract is created, and the row is
  * re-read from the database to confirm all eight columns were written.
  */
-@SpringBootTest
+@SpringBootTest(properties = "jwt.secret=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 @Transactional
 class OwnerContractPartySnapshotEndToEndTest {
 

@@ -469,7 +469,6 @@ class UserServiceImplTest {
     @Test
     void searchAvailableForTenantAsOwnerUsesScopedQuery() {
         stubOwnerScope();
-        when(securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)).thenReturn(false);
         when(userRepository.findAvailableForTenantInOwnerScope(eq("dara"), eq(OWNER_ID),
                 anyCollection(), anyCollection(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 10), 0));
@@ -494,16 +493,22 @@ class UserServiceImplTest {
     }
 
     @Test
-    void searchAvailableForTenantKeepsManagerCandidatePoolUnrestricted() {
-        stubNoStaffRole();
+    void searchAvailableForTenantAsManagerUsesScopedQueryAndNeverTheGlobalOne() {
+        Long managerId = 2L;
+        when(securityUtils.hasRole(SecurityUtils.ROLE_OWNER)).thenReturn(false);
+        when(securityUtils.hasRole(SecurityUtils.ROLE_SUPER_ADMIN)).thenReturn(false);
         when(securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)).thenReturn(true);
-        when(userRepository.findAvailableForTenant(eq("dara"), any(Pageable.class)))
+        when(securityUtils.getCurrentUserId()).thenReturn(managerId);
+        when(houseAccessService.getScopedOwnerIds()).thenReturn(List.of(OWNER_ID));
+        when(houseAccessService.getAccessibleHouseIds()).thenReturn(List.of(MY_HOUSE_ID));
+        when(userRepository.findAvailableForTenantInOwnerScope(eq("dara"), eq(managerId),
+                anyCollection(), anyCollection(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 10), 0));
 
         userService.searchAvailableForTenant("dara", PageRequest.of(0, 10));
 
-        verify(userRepository).findAvailableForTenant(eq("dara"), any(Pageable.class));
-        verify(userRepository, never()).findAvailableForTenantInOwnerScope(any(), anyLong(),
-                anyCollection(), anyCollection(), any(Pageable.class));
+        verify(userRepository, never()).findAvailableForTenant(any(), any(Pageable.class));
+        verify(userRepository).findAvailableForTenantInOwnerScope(eq("dara"), eq(managerId),
+                eq(List.of(OWNER_ID)), eq(List.of(MY_HOUSE_ID)), any(Pageable.class));
     }
 }

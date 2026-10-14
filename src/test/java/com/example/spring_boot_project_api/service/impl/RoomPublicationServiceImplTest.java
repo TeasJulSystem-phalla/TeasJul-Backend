@@ -26,12 +26,14 @@ import org.mockito.quality.Strictness;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.security.access.AccessDeniedException;
 
 import com.example.spring_boot_project_api.enums.RoomPublicationStatus;
 import com.example.spring_boot_project_api.enums.RoomStatus;
 import com.example.spring_boot_project_api.exception.RoomNotFoundException;
 import com.example.spring_boot_project_api.model.Room;
 import com.example.spring_boot_project_api.repository.RoomRepository;
+import com.example.spring_boot_project_api.service.HouseAccessService;
 import com.example.spring_boot_project_api.service.NotificationService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
 
@@ -44,6 +46,9 @@ class RoomPublicationServiceImplTest {
 
     @Mock
     private SecurityUtils securityUtils;
+
+    @Mock
+    private HouseAccessService houseAccessService;
 
     @Mock
     private NotificationService notificationService;
@@ -137,12 +142,12 @@ class RoomPublicationServiceImplTest {
     }
 
     @Test
-    void submitForApproval_byOwner_managerManagementAccess() {
-        ownerRole();
+    void submitForApproval_byManagerWithHouseAccess_movesDraftToPendingApproval() {
         when(securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)).thenReturn(true);
-        when(securityUtils.hasPermission(anyLong(), any(String.class))).thenReturn(true);
         Room room = room(999L, RoomPublicationStatus.DRAFT);
+        room.setHouseId(7L);
         when(roomRepository.findById(1L)).thenReturn(Optional.of(room));
+        when(houseAccessService.canManageHouse(7L)).thenReturn(true);
         when(roomRepository.save(any(Room.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Room result = service.submitForApproval(1L);
@@ -150,6 +155,20 @@ class RoomPublicationServiceImplTest {
         assertThat(result.getPublicationStatus())
                 .isEqualTo(RoomPublicationStatus.PENDING_APPROVAL);
         verify(notificationService).notifyPropertySubmitted(room);
+    }
+
+    @Test
+    void submitForApproval_byManagerWithoutHouseAccess_isDenied() {
+        when(securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)).thenReturn(true);
+        Room room = room(999L, RoomPublicationStatus.DRAFT);
+        room.setHouseId(7L);
+        when(roomRepository.findById(1L)).thenReturn(Optional.of(room));
+        when(houseAccessService.canManageHouse(7L)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.submitForApproval(1L))
+                .isInstanceOf(AccessDeniedException.class);
+        verify(roomRepository, never()).save(any(Room.class));
+        verify(notificationService, never()).notifyPropertySubmitted(any(Room.class));
     }
 
     // ---------- approve ----------

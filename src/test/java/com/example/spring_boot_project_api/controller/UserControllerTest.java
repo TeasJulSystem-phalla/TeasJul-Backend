@@ -189,4 +189,20 @@ class UserControllerTest {
                         .header("Authorization", "Bearer " + validToken()))
                 .andExpect(status().isNoContent());
     }
+
+    @Test
+    void availableForTenantRequiresAuthentication() throws Exception {
+        mockMvc.perform(get("/api/v1/users/available-for-tenant"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void availableForTenantWithRoleAllowsAccess() throws Exception {
+        when(userDetailsService.loadUserByUsername("johndoe")).thenReturn(springUser());
+        when(userService.searchAvailableForTenant(any(), any(Pageable.class)))
+                .thenReturn(new PageResponse<>(List.of(), 0, 10, 0L, 0));
+        mockMvc.perform(get("/api/v1/users/available-for-tenant")
+                        .header("Authorization", "Bearer " + validToken()))
+                .andExpect(status().isOk());
+    }
 }

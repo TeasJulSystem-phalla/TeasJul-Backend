@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -118,5 +119,14 @@ class TenantControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].meterNumber").value("M-100"))
                 .andExpect(jsonPath("$[0].utilityTypeName").value("Electricity"));
+    }
+
+    @Test
+    void createTenantRequiresAuth() throws Exception {
+        mockMvc.perform(post("/api/v1/tenants").contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"tenantCode":"TN-001","firstName":"A","lastName":"B","phone":"012"}
+                                """))
+                .andExpect(status().isUnauthorized());
     }
 }

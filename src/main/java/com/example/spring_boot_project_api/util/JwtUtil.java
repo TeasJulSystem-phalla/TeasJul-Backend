@@ -18,14 +18,31 @@ import io.jsonwebtoken.security.Keys;
 @Component
 public class JwtUtil {
 
+    private static final int MIN_SECRET_BYTES = 32;
+
     private final SecretKey signingKey;
     private final long expirationMs;
 
     public JwtUtil(
             @Value("${jwt.secret}") String secret,
             @Value("${jwt.expiration-ms}") long expirationMs) {
-        this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+        this.signingKey = buildSigningKey(secret);
         this.expirationMs = expirationMs;
+    }
+
+    private static SecretKey buildSigningKey(String secret) {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException(
+                    "JWT signing secret is not configured. Set the JWT_SECRET environment "
+                            + "variable to at least " + MIN_SECRET_BYTES + " bytes (256 bits).");
+        }
+        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
+        if (keyBytes.length < MIN_SECRET_BYTES) {
+            throw new IllegalStateException(
+                    "JWT signing secret is too weak (" + keyBytes.length + " bytes). "
+                            + "Provide at least " + MIN_SECRET_BYTES + " bytes (256 bits) via JWT_SECRET.");
+        }
+        return Keys.hmacShaKeyFor(keyBytes);
     }
 
     public String generateToken(String subject) {
