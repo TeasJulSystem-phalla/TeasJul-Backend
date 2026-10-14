@@ -4,10 +4,12 @@ ALTER TABLE rooms
     MODIFY COLUMN `owner_id` BIGINT UNSIGNED NOT NULL;
 
 ALTER TABLE rooms
-    ADD UNIQUE KEY IF NOT EXISTS uk_rooms_id_owner (id, owner_id);
+    DROP INDEX IF EXISTS uk_rooms_id_owner,
+    ADD UNIQUE KEY uk_rooms_id_owner (id, owner_id);
 
 ALTER TABLE tenants
-    ADD UNIQUE KEY IF NOT EXISTS uk_tenants_id_owner (id, owner_id);
+    DROP INDEX IF EXISTS uk_tenants_id_owner,
+    ADD UNIQUE KEY uk_tenants_id_owner (id, owner_id);
 
 CREATE TABLE maintenance_requests (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
