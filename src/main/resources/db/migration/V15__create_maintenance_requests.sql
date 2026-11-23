@@ -1,14 +1,7 @@
 ALTER TABLE rooms
-    MODIFY COLUMN `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    MODIFY COLUMN `house_id` BIGINT UNSIGNED NOT NULL,
-    MODIFY COLUMN `owner_id` BIGINT UNSIGNED NOT NULL;
-
-ALTER TABLE rooms
-    DROP INDEX IF EXISTS uk_rooms_id_owner,
     ADD UNIQUE KEY uk_rooms_id_owner (id, owner_id);
 
 ALTER TABLE tenants
-    DROP INDEX IF EXISTS uk_tenants_id_owner,
     ADD UNIQUE KEY uk_tenants_id_owner (id, owner_id);
 
 CREATE TABLE maintenance_requests (

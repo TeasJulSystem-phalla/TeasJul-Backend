@@ -32,7 +32,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class FreshDatabaseMigrationTest {
 
     @Container
-    static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0.36")
+    static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4.11")
             .withDatabaseName("teasjul_fresh_" + UUID.randomUUID().toString().replace("-", ""))
             .withUsername("test")
             .withPassword("test");

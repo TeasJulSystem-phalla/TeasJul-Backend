@@ -63,7 +63,7 @@ public class UserSecurity {
     private Boolean twoFactorEnabled = false;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "two_factor_method", length = 20)
+    @Column(name = "two_factor_method", length = 20, columnDefinition = "VARCHAR(20)")
     private TwoFactorMethod twoFactorMethod;
 
     @Column(name = "pending_recovery_email", length = 150)

@@ -43,7 +43,7 @@ public class Notification {
     private User user;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "type", nullable = false, length = 50)
+    @Column(name = "type", nullable = false, length = 50, columnDefinition = "VARCHAR(50)")
     private NotificationType type;
 
     @Column(name = "title", nullable = false, length = 200)

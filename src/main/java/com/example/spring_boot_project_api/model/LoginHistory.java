@@ -56,7 +56,7 @@ public class LoginHistory {
     private LocalDateTime occurredAt;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "outcome", nullable = false, length = 10)
+    @Column(name = "outcome", nullable = false, length = 10, columnDefinition = "VARCHAR(10)")
     private LoginOutcome outcome;
 
     @Column(name = "ip", length = 45)
@@ -66,6 +66,6 @@ public class LoginHistory {
     private String userAgent;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "method", nullable = false, length = 20)
+    @Column(name = "method", nullable = false, length = 20, columnDefinition = "VARCHAR(20)")
     private LoginMethod method;
 }

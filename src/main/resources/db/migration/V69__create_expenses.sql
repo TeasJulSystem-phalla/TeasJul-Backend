@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS expenses (
         FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE RESTRICT ON UPDATE CASCADE,
     -- Ensures the referenced house belongs to the same owner as the expense.
     CONSTRAINT fk_expenses_house_owner
-        FOREIGN KEY (house_id, owner_id) REFERENCES houses(id, owner_id) ON DELETE SET NULL ON UPDATE CASCADE,
+        FOREIGN KEY (house_id, owner_id) REFERENCES houses(id, owner_id) ON DELETE RESTRICT ON UPDATE CASCADE,
     -- Ensures the referenced category belongs to the same owner as the expense.
     CONSTRAINT fk_expenses_category_owner
         FOREIGN KEY (category_id, owner_id) REFERENCES expense_categories(id, owner_id) ON DELETE RESTRICT ON UPDATE CASCADE,

@@ -154,7 +154,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     /**
      * Owner-scoped counterpart of {@link #findAvailableForTenant(String, Pageable)}.
-     * The "not yet a tenant" restriction is kept on top of the ownership scope.
+     * The "not yet a tenant" restriction is kept on top of the ownership scope: a
+     * linked tenant already owns a tenant profile and can never be linked again, so
+     * the only users this returns are the caller (when they have no tenant profile)
+     * and any in-scope user who does not yet have one.
      */
     @Query("""
             SELECT u FROM User u

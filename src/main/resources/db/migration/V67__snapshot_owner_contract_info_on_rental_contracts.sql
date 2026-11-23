@@ -10,11 +10,11 @@
 -- and simply have no snapshot.
 
 ALTER TABLE rental_contracts
-    ADD COLUMN IF NOT EXISTS owner_full_name VARCHAR(200) NULL AFTER owner_id,
-    ADD COLUMN IF NOT EXISTS owner_gender VARCHAR(20) NULL AFTER owner_full_name,
-    ADD COLUMN IF NOT EXISTS owner_date_of_birth DATE NULL AFTER owner_gender,
-    ADD COLUMN IF NOT EXISTS owner_nationality VARCHAR(100) NULL AFTER owner_date_of_birth,
-    ADD COLUMN IF NOT EXISTS owner_national_id VARCHAR(100) NULL AFTER owner_nationality,
-    ADD COLUMN IF NOT EXISTS owner_address VARCHAR(255) NULL AFTER owner_national_id,
-    ADD COLUMN IF NOT EXISTS owner_phone VARCHAR(30) NULL AFTER owner_address,
-    ADD COLUMN IF NOT EXISTS owner_occupation VARCHAR(150) NULL AFTER owner_phone;
+    ADD COLUMN owner_full_name VARCHAR(200) NULL AFTER owner_id,
+    ADD COLUMN owner_gender VARCHAR(20) NULL AFTER owner_full_name,
+    ADD COLUMN owner_date_of_birth DATE NULL AFTER owner_gender,
+    ADD COLUMN owner_nationality VARCHAR(100) NULL AFTER owner_date_of_birth,
+    ADD COLUMN owner_national_id VARCHAR(100) NULL AFTER owner_nationality,
+    ADD COLUMN owner_address VARCHAR(255) NULL AFTER owner_national_id,
+    ADD COLUMN owner_phone VARCHAR(30) NULL AFTER owner_address,
+    ADD COLUMN owner_occupation VARCHAR(150) NULL AFTER owner_phone;

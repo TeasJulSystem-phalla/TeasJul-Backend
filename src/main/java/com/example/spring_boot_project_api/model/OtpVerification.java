@@ -47,7 +47,7 @@ public class OtpVerification {
     private User user;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "purpose", nullable = false, length = 30)
+    @Column(name = "purpose", nullable = false, length = 30, columnDefinition = "VARCHAR(30)")
     private OtpPurpose purpose;
 
     @Column(name = "otp_hash", nullable = false, length = 64)

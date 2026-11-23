@@ -16,14 +16,14 @@ CREATE TABLE IF NOT EXISTS property_owners (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE houses
-    ADD COLUMN IF NOT EXISTS owner_record_id BIGINT UNSIGNED NULL AFTER owner_id,
+    ADD COLUMN owner_record_id BIGINT UNSIGNED NULL AFTER owner_id,
     ADD INDEX idx_houses_owner_record_id (owner_record_id),
     ADD CONSTRAINT fk_houses_owner_record
         FOREIGN KEY (owner_record_id) REFERENCES property_owners(id)
         ON DELETE RESTRICT ON UPDATE CASCADE;
 
 ALTER TABLE rooms
-    ADD COLUMN IF NOT EXISTS owner_record_id BIGINT UNSIGNED NULL AFTER owner_id,
+    ADD COLUMN owner_record_id BIGINT UNSIGNED NULL AFTER owner_id,
     ADD INDEX idx_rooms_owner_record_id (owner_record_id),
     ADD CONSTRAINT fk_rooms_owner_record
         FOREIGN KEY (owner_record_id) REFERENCES property_owners(id)
