@@ -125,6 +125,21 @@ public class TenantPortalServiceImpl implements TenantPortalService {
         if (request.address() != null) {
             tenant.setAddress(request.address());
         }
+        if (request.houseNumber() != null) {
+            tenant.setHouseNumber(request.houseNumber());
+        }
+        if (request.streetNumber() != null) {
+            tenant.setStreetNumber(request.streetNumber());
+        }
+        if (request.sangkat() != null) {
+            tenant.setSangkat(request.sangkat());
+        }
+        if (request.khan() != null) {
+            tenant.setKhan(request.khan());
+        }
+        if (request.cityProvince() != null) {
+            tenant.setCityProvince(request.cityProvince());
+        }
 
         tenantRepository.save(tenant);
         return getMyTenantProfile();

@@ -344,6 +344,18 @@ public class AdminPropertyServiceImpl implements AdminPropertyService {
         house.setSlug(slugify(req.getName()) + "-" + randomToken(6));
         house.setCode("PRP-" + randomToken(6).toUpperCase(Locale.ROOT));
         house.setAddress(req.getAddress().trim());
+        if (req.getHouseNumber() != null && !req.getHouseNumber().isBlank()) {
+            house.setHouseNumber(req.getHouseNumber().trim());
+        }
+        if (req.getStreetNumber() != null && !req.getStreetNumber().isBlank()) {
+            house.setStreetNumber(req.getStreetNumber().trim());
+        }
+        if (req.getSangkat() != null && !req.getSangkat().isBlank()) {
+            house.setSangkat(req.getSangkat().trim());
+        }
+        if (req.getKhan() != null && !req.getKhan().isBlank()) {
+            house.setKhan(req.getKhan().trim());
+        }
         house.setPostalCode(req.getPostalCode());
         house.setCityProvince(req.getCityProvince());
         house.setDescription(req.getDescription());
@@ -367,6 +379,18 @@ public class AdminPropertyServiceImpl implements AdminPropertyService {
         }
         if (req.getAddress() != null && !req.getAddress().isBlank()) {
             house.setAddress(req.getAddress().trim());
+        }
+        if (req.getHouseNumber() != null && !req.getHouseNumber().isBlank()) {
+            house.setHouseNumber(req.getHouseNumber().trim());
+        }
+        if (req.getStreetNumber() != null && !req.getStreetNumber().isBlank()) {
+            house.setStreetNumber(req.getStreetNumber().trim());
+        }
+        if (req.getSangkat() != null && !req.getSangkat().isBlank()) {
+            house.setSangkat(req.getSangkat().trim());
+        }
+        if (req.getKhan() != null && !req.getKhan().isBlank()) {
+            house.setKhan(req.getKhan().trim());
         }
         house.setPostalCode(req.getPostalCode());
         house.setCityProvince(req.getCityProvince());

@@ -34,10 +34,30 @@ public record UpdateOwnerContractInfoRequest(
         @Size(max = 255, message = "Current address must not exceed 255 characters")
         String currentAddress,
 
+        @Size(max = 100, message = "House number must not exceed 100 characters")
+        String houseNumber,
+
+        @Size(max = 100, message = "Street number must not exceed 100 characters")
+        String streetNumber,
+
+        @Size(max = 150, message = "Sangkat must not exceed 150 characters")
+        String sangkat,
+
+        @Size(max = 150, message = "Khan must not exceed 150 characters")
+        String khan,
+
+        @Size(max = 150, message = "City/Province must not exceed 150 characters")
+        String cityProvince,
+
         @Size(max = 30, message = "Phone must not exceed 30 characters")
         String phone,
 
         @Size(max = 150, message = "Occupation must not exceed 150 characters")
         String occupation
 ) {
+    public UpdateOwnerContractInfoRequest(String fullName, Gender gender, LocalDate dateOfBirth,
+            String nationality, String nationalId, String currentAddress, String phone, String occupation) {
+        this(fullName, gender, dateOfBirth, nationality, nationalId, currentAddress,
+                null, null, null, null, null, phone, occupation);
+    }
 }

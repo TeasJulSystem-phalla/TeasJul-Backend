@@ -22,6 +22,10 @@ public class HouseMapper {
                 house.getSlug(),
                 house.getCode(),
                 house.getAddress(),
+                house.getHouseNumber(),
+                house.getStreetNumber(),
+                house.getSangkat(),
+                house.getKhan(),
                 house.getPostalCode(),
                 house.getLatitude(),
                 house.getLongitude(),
@@ -51,6 +55,10 @@ public class HouseMapper {
                 .slug(request.slug())
                 .code(request.code())
                 .address(request.address())
+                .houseNumber(request.houseNumber())
+                .streetNumber(request.streetNumber())
+                .sangkat(request.sangkat())
+                .khan(request.khan())
                 .postalCode(request.postalCode())
                 .latitude(request.latitude())
                 .longitude(request.longitude())

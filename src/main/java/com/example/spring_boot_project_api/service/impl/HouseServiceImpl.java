@@ -181,6 +181,18 @@ public class HouseServiceImpl implements HouseService {
         if (request.address() != null) {
             house.setAddress(request.address());
         }
+        if (request.houseNumber() != null) {
+            house.setHouseNumber(request.houseNumber());
+        }
+        if (request.streetNumber() != null) {
+            house.setStreetNumber(request.streetNumber());
+        }
+        if (request.sangkat() != null) {
+            house.setSangkat(request.sangkat());
+        }
+        if (request.khan() != null) {
+            house.setKhan(request.khan());
+        }
         if (request.postalCode() != null) {
             house.setPostalCode(request.postalCode());
         }

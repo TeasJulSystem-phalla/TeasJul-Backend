@@ -25,6 +25,18 @@ public record UpdateHouseRequest(
         @Size(max = 500, message = "Address must not exceed 500 characters")
         String address,
 
+        @Size(max = 100, message = "House number must not exceed 100 characters")
+        String houseNumber,
+
+        @Size(max = 100, message = "Street number must not exceed 100 characters")
+        String streetNumber,
+
+        @Size(max = 150, message = "Sangkat must not exceed 150 characters")
+        String sangkat,
+
+        @Size(max = 150, message = "Khan must not exceed 150 characters")
+        String khan,
+
         @Size(max = 20, message = "Postal code must not exceed 20 characters")
         String postalCode,
 
@@ -70,4 +82,15 @@ public record UpdateHouseRequest(
         @Positive(message = "Number of floors must be greater than 0")
         Integer numberOfFloors
 ) {
+    public UpdateHouseRequest(String name, String slug, String code, String address,
+            String postalCode, BigDecimal latitude, BigDecimal longitude, String cityProvince,
+            String googleMapsUrl, Integer totalRooms, Integer availableRooms, String description,
+            HouseStatus status, PropertyType propertyType, Furnishing furnishing, LocalDate availableFrom,
+            BigDecimal advancePayment, Integer bedrooms, Integer bathrooms, BigDecimal areaSqm,
+            BigDecimal landSizeSqm, Integer numberOfFloors) {
+        this(name, slug, code, address, null, null, null, null, postalCode, latitude, longitude,
+                cityProvince, googleMapsUrl, totalRooms, availableRooms, description, status,
+                propertyType, furnishing, availableFrom, advancePayment, bedrooms, bathrooms, areaSqm,
+                landSizeSqm, numberOfFloors);
+    }
 }

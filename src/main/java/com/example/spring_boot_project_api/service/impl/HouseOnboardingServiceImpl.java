@@ -74,6 +74,7 @@ public class HouseOnboardingServiceImpl implements HouseOnboardingService {
     private final UserHouseAccessRepository userHouseAccessRepository;
     private final TenantMapper tenantMapper;
     private final SecurityUtils securityUtils;
+    private final ContractAddressSnapshotHelper snapshotHelper;
 
     // ------------------------------------------------------------------
     // Import flow
@@ -179,6 +180,7 @@ public class HouseOnboardingServiceImpl implements HouseOnboardingService {
                     .status(parseStatus(row.contractStatus()))
                     .notes(row.notes())
                     .build();
+            snapshotHelper.snapshotAll(contract, owner.getId(), house, tenant);
             rentalContractRepository.save(contract);
             contractsCreated++;
 
@@ -389,6 +391,7 @@ public class HouseOnboardingServiceImpl implements HouseOnboardingService {
                             : RentalContractStatus.ACTIVE)
                     .notes(row.notes())
                     .build();
+            snapshotHelper.snapshotAll(contract, owner.getId(), house, tenant);
             rentalContractRepository.save(contract);
             contractsCreated++;
 

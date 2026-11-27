@@ -26,8 +26,22 @@ public record TenantResponse(
         String idType,
         String idNumber,
         String address,
+        String houseNumber,
+        String streetNumber,
+        String sangkat,
+        String khan,
+        String cityProvince,
         TenantStatus status,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
+    public TenantResponse(Long id, Long userId, Long ownerId, Long houseId, Long invitedById,
+            String tenantCode, String firstName, String lastName, Gender gender, LocalDate dateOfBirth,
+            String phone, String email, OccupationType occupationType, String occupation,
+            String schoolOrCompany, String idType, String idNumber, String address, TenantStatus status,
+            LocalDateTime createdAt, LocalDateTime updatedAt) {
+        this(id, userId, ownerId, houseId, invitedById, tenantCode, firstName, lastName, gender,
+                dateOfBirth, phone, email, occupationType, occupation, schoolOrCompany, idType, idNumber,
+                address, null, null, null, null, null, status, createdAt, updatedAt);
+    }
 }

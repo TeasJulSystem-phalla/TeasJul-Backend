@@ -66,6 +66,56 @@ public class RentalContract {
     @Column(name = "owner_address", length = 255)
     private String ownerAddress;
 
+    /* Structured Party A address snapshot. Additive only; `owner_address`
+       remains the legacy value and is not rewritten by this phase. */
+    @Column(name = "owner_house_number", length = 100)
+    private String ownerHouseNumber;
+
+    @Column(name = "owner_street_number", length = 100)
+    private String ownerStreetNumber;
+
+    @Column(name = "owner_sangkat", length = 150)
+    private String ownerSangkat;
+
+    @Column(name = "owner_khan", length = 150)
+    private String ownerKhan;
+
+    @Column(name = "owner_city_province", length = 150)
+    private String ownerCityProvince;
+
+    /* Structured Party B address snapshot. Tenant addresses are not yet
+       snapshotted by the service; these columns are schema-only for now. */
+    @Column(name = "tenant_house_number", length = 100)
+    private String tenantHouseNumber;
+
+    @Column(name = "tenant_street_number", length = 100)
+    private String tenantStreetNumber;
+
+    @Column(name = "tenant_sangkat", length = 150)
+    private String tenantSangkat;
+
+    @Column(name = "tenant_khan", length = 150)
+    private String tenantKhan;
+
+    @Column(name = "tenant_city_province", length = 150)
+    private String tenantCityProvince;
+
+    /* Structured Article 1 rental-property address snapshot. */
+    @Column(name = "house_house_number", length = 100)
+    private String houseHouseNumber;
+
+    @Column(name = "house_street_number", length = 100)
+    private String houseStreetNumber;
+
+    @Column(name = "house_sangkat", length = 150)
+    private String houseSangkat;
+
+    @Column(name = "house_khan", length = 150)
+    private String houseKhan;
+
+    @Column(name = "house_city_province", length = 150)
+    private String houseCityProvince;
+
     @Column(name = "owner_phone", length = 30)
     private String ownerPhone;
 
@@ -74,6 +124,9 @@ public class RentalContract {
 
     @Column(name = "contract_no", nullable = false, length = 50)
     private String contractNo;
+
+    @Column(name = "contract_number", updatable = false)
+    private Long contractNumber;
 
     @Column(name = "room_id", nullable = false)
     private Long roomId;

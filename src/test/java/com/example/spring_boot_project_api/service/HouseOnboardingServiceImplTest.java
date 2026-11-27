@@ -74,6 +74,8 @@ class HouseOnboardingServiceImplTest {
     private TenantMapper tenantMapper = new TenantMapper();
     @Mock
     private SecurityUtils securityUtils;
+    @Mock
+    private com.example.spring_boot_project_api.service.impl.ContractAddressSnapshotHelper snapshotHelper;
 
     @InjectMocks
     private HouseOnboardingServiceImpl service;

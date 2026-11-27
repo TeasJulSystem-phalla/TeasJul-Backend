@@ -11,12 +11,19 @@ import com.example.spring_boot_project_api.enums.RoomStatus;
 import com.example.spring_boot_project_api.exception.DuplicateResourceException;
 import com.example.spring_boot_project_api.exception.RentalContractNotFoundException;
 import com.example.spring_boot_project_api.exception.RoomNotFoundException;
+import com.example.spring_boot_project_api.exception.TenantNotFoundException;
 import com.example.spring_boot_project_api.mapper.RentalContractMapper;
+import com.example.spring_boot_project_api.model.ContractTenant;
+import com.example.spring_boot_project_api.model.House;
 import com.example.spring_boot_project_api.model.RentalContract;
 import com.example.spring_boot_project_api.model.Room;
+import com.example.spring_boot_project_api.model.Tenant;
 import com.example.spring_boot_project_api.model.User;
+import com.example.spring_boot_project_api.repository.ContractTenantRepository;
+import com.example.spring_boot_project_api.repository.HouseRepository;
 import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
+import com.example.spring_boot_project_api.repository.TenantRepository;
 import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
 import com.example.spring_boot_project_api.service.OwnerSettingService;
@@ -56,6 +63,7 @@ public class RentalContractServiceImpl implements RentalContractService {
 
     private final RentalContractRepository contractRepository;
     private final RoomRepository roomRepository;
+    private final HouseRepository houseRepository;
     private final UserHouseAccessRepository userHouseAccessRepository;
     private final RentalContractMapper contractMapper;
     private final SecurityUtils securityUtils;
@@ -63,6 +71,10 @@ public class RentalContractServiceImpl implements RentalContractService {
     private final RoomBookingService roomBookingService;
     private final OwnerSettingService ownerSettingService;
     private final UserRepository userRepository;
+    private final TenantRepository tenantRepository;
+    private final ContractTenantRepository contractTenantRepository;
+    private final ContractAddressSnapshotHelper snapshotHelper;
+    private final com.example.spring_boot_project_api.service.ContractNumberService contractNumberService;
 
     @Override
     public RentalContractResponse createContract(RentalContractRequest request) {
@@ -83,11 +95,33 @@ public class RentalContractServiceImpl implements RentalContractService {
 
         RentalContract contract = contractMapper.toEntity(request);
         contract.setOwnerId(ownerId);
-        snapshotOwnerContractInfo(contract, ownerId);
+        snapshotHelper.snapshotOwner(contract, ownerId);
+
+        House house = houseRepository.findById(targetRoom.getHouseId()).orElse(null);
+        snapshotHelper.snapshotHouse(contract, house);
+
+        Tenant tenant = null;
+        if (request.getTenantId() != null) {
+            tenant = tenantRepository.findById(request.getTenantId())
+                    .orElseThrow(() -> TenantNotFoundException.forId(request.getTenantId()));
+            verifyTenantAccess(tenant, currentUserId);
+            snapshotHelper.snapshotTenant(contract, tenant);
+        }
+
         contract.setBookingId(bookingId);
         contract.setContractNo(generateUniqueContractNo());
+        contract.setContractNumber(contractNumberService.nextContractNumber());
         applyStatusRules(contract);
         RentalContract savedContract = contractRepository.save(contract);
+        if (tenant != null) {
+            ContractTenant ct = ContractTenant.builder()
+                    .contractId(savedContract.getId())
+                    .tenantId(tenant.getId())
+                    .isPrimary(true)
+                    .joinedAt(savedContract.getStartDate())
+                    .build();
+            contractTenantRepository.save(ct);
+        }
         completeBookingWhenContractStarts(savedContract);
         try {
             notificationService.notifyContractExpiring(savedContract);
@@ -409,23 +443,19 @@ public class RentalContractServiceImpl implements RentalContractService {
      * contract-tenant assignment workflow.</p>
      */
     private void snapshotOwnerContractInfo(RentalContract contract, Long ownerId) {
-        OwnerContractInfoResponse info = ownerSettingService.getContractInfo(ownerId);
-        if (info == null) {
-            // A missing settings record must never block signing a lease: fall
-            // through to the owner account so the signer is still identified.
-            info = new OwnerContractInfoResponse("", null, null, "", "", "", "", "");
-        }
-        User owner = userRepository.findById(ownerId).orElse(null);
+        snapshotHelper.snapshotOwner(contract, ownerId);
+    }
 
-        String fullName = firstNonBlank(info.fullName(), ownerFullName(owner));
-        contract.setOwnerFullName(fullName);
-        contract.setOwnerGender(blankToNull(info.gender() == null ? null : info.gender().name()));
-        contract.setOwnerDateOfBirth(info.dateOfBirth());
-        contract.setOwnerNationality(blankToNull(info.nationality()));
-        contract.setOwnerNationalId(blankToNull(info.nationalId()));
-        contract.setOwnerAddress(blankToNull(info.currentAddress()));
-        contract.setOwnerPhone(firstNonBlank(info.phone(), owner == null ? null : owner.getPhone()));
-        contract.setOwnerOccupation(blankToNull(info.occupation()));
+    private void verifyTenantAccess(Tenant tenant, Long currentUserId) {
+        if (tenant.getOwner().getId().equals(currentUserId)) {
+            return;
+        }
+        if (tenant.getHouse() != null && (tenant.getHouse().getOwner().getId().equals(currentUserId)
+                || (securityUtils.hasRole(SecurityUtils.ROLE_MANAGER)
+                        && userHouseAccessRepository.existsByUserIdAndHouseId(currentUserId, tenant.getHouse().getId())))) {
+            return;
+        }
+        throw TenantNotFoundException.forId(tenant.getId());
     }
 
     private static String ownerFullName(User owner) {

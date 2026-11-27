@@ -61,6 +61,18 @@ public class House {
     @Column(name = "address", nullable = false, length = 500)
     private String address;
 
+    @Column(name = "house_number", length = 100)
+    private String houseNumber;
+
+    @Column(name = "street_number", length = 100)
+    private String streetNumber;
+
+    @Column(name = "sangkat", length = 150)
+    private String sangkat;
+
+    @Column(name = "khan", length = 150)
+    private String khan;
+
     @Column(name = "postal_code", length = 20)
     private String postalCode;
 

@@ -47,6 +47,7 @@ public class ContractTenantServiceImpl implements ContractTenantService {
     private final SecurityUtils securityUtils;
     private final HouseAccessService houseAccessService;
     private final NotificationService notificationService;
+    private final ContractAddressSnapshotHelper snapshotHelper;
 
     @Override
     public ContractTenantResponse addTenantToContract(ContractTenantRequest request) {
@@ -69,8 +70,23 @@ public class ContractTenantServiceImpl implements ContractTenantService {
             throw new DuplicateResourceException("Tenant is currently renting another unit and cannot be assigned to a new contract.");
         }
 
+        boolean isPrimary = Boolean.TRUE.equals(request.isPrimary());
+        boolean alreadyHasPrimaryTenant =
+                contractTenantRepository.existsByContractIdAndIsPrimaryTrue(contract.getId());
+        boolean hasNonNullPartyBSnapshot =
+                contract.getTenantHouseNumber() != null
+                || contract.getTenantStreetNumber() != null
+                || contract.getTenantSangkat() != null
+                || contract.getTenantKhan() != null
+                || contract.getTenantCityProvince() != null;
+
         ContractTenant entity = contractTenantMapper.toEntity(request);
         ContractTenant saved = contractTenantRepository.save(entity);
+
+        if (isPrimary && !alreadyHasPrimaryTenant && !hasNonNullPartyBSnapshot) {
+            snapshotHelper.snapshotTenant(contract, tenant);
+            contractRepository.save(contract);
+        }
 
         // Once a tenant is assigned, a draft contract becomes active automatically.
         if (contract.getStatus() == RentalContractStatus.DRAFT) {
@@ -133,8 +149,28 @@ public class ContractTenantServiceImpl implements ContractTenantService {
                     throw new DuplicateResourceException("Tenant is already assigned to this contract.");
                 });
 
+        boolean isPrimary = Boolean.TRUE.equals(request.isPrimary());
+        boolean wasPrimary = Boolean.TRUE.equals(existing.getIsPrimary());
+
         contractTenantMapper.updateEntityFromDto(request, existing);
         ContractTenant saved = contractTenantRepository.save(existing);
+
+        if (isPrimary && !wasPrimary) {
+            RentalContract contract = getOwnedContract(request.contractId());
+            boolean hasNonNullPartyBSnapshot =
+                    contract.getTenantHouseNumber() != null
+                    || contract.getTenantStreetNumber() != null
+                    || contract.getTenantSangkat() != null
+                    || contract.getTenantKhan() != null
+                    || contract.getTenantCityProvince() != null;
+            if (!hasNonNullPartyBSnapshot) {
+                tenantRepository.findById(request.tenantId()).ifPresent(tenant -> {
+                    snapshotHelper.snapshotTenant(contract, tenant);
+                    contractRepository.save(contract);
+                });
+            }
+        }
+
         syncTenantStatus(saved.getTenantId());
         return contractTenantMapper.toResponse(saved);
     }

@@ -15,7 +15,17 @@ public record OwnerContractInfoResponse(
         String nationality,
         String nationalId,
         String currentAddress,
+        String houseNumber,
+        String streetNumber,
+        String sangkat,
+        String khan,
+        String cityProvince,
         String phone,
         String occupation
 ) {
+    public OwnerContractInfoResponse(String fullName, Gender gender, LocalDate dateOfBirth,
+            String nationality, String nationalId, String currentAddress, String phone, String occupation) {
+        this(fullName, gender, dateOfBirth, nationality, nationalId, currentAddress,
+                "", "", "", "", "", phone, occupation);
+    }
 }

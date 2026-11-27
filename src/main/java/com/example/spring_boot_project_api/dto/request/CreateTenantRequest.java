@@ -54,6 +54,29 @@ public record CreateTenantRequest(
         String idNumber,
 
         @Size(max = 255, message = "Address must not exceed 255 characters")
-        String address
+        String address,
+
+        @Size(max = 100, message = "House number must not exceed 100 characters")
+        String houseNumber,
+
+        @Size(max = 100, message = "Street number must not exceed 100 characters")
+        String streetNumber,
+
+        @Size(max = 150, message = "Sangkat must not exceed 150 characters")
+        String sangkat,
+
+        @Size(max = 150, message = "Khan must not exceed 150 characters")
+        String khan,
+
+        @Size(max = 150, message = "City/Province must not exceed 150 characters")
+        String cityProvince
 ) {
+    public CreateTenantRequest(Long userId, String tenantCode, String firstName, String lastName,
+            Gender gender, LocalDate dateOfBirth, String phone, String email,
+            OccupationType occupationType, String occupation, String schoolOrCompany,
+            String idType, String idNumber, String address) {
+        this(userId, tenantCode, firstName, lastName, gender, dateOfBirth, phone, email,
+                occupationType, occupation, schoolOrCompany, idType, idNumber, address,
+                null, null, null, null, null);
+    }
 }

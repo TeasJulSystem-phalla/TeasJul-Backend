@@ -31,6 +31,11 @@ public class TenantMapper {
                 tenant.getIdType(),
                 tenant.getIdNumber(),
                 tenant.getAddress(),
+                tenant.getHouseNumber(),
+                tenant.getStreetNumber(),
+                tenant.getSangkat(),
+                tenant.getKhan(),
+                tenant.getCityProvince(),
                 tenant.getStatus(),
                 tenant.getCreatedAt(),
                 tenant.getUpdatedAt());
@@ -51,6 +56,11 @@ public class TenantMapper {
                 .idType(request.idType())
                 .idNumber(request.idNumber())
                 .address(request.address())
+                .houseNumber(request.houseNumber())
+                .streetNumber(request.streetNumber())
+                .sangkat(request.sangkat())
+                .khan(request.khan())
+                .cityProvince(request.cityProvince())
                 .status(TenantStatus.ACTIVE)
                 .build();
     }

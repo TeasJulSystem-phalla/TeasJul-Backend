@@ -95,6 +95,21 @@ public class Tenant {
     @Column(name = "address")
     private String address;
 
+    @Column(name = "house_number", length = 100)
+    private String houseNumber;
+
+    @Column(name = "street_number", length = 100)
+    private String streetNumber;
+
+    @Column(name = "sangkat", length = 150)
+    private String sangkat;
+
+    @Column(name = "khan", length = 150)
+    private String khan;
+
+    @Column(name = "city_province", length = 150)
+    private String cityProvince;
+
     @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, columnDefinition = "ENUM('ACTIVE','RENTING','INACTIVE','PENDING') DEFAULT 'ACTIVE'")

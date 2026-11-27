@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -18,6 +19,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -40,10 +42,13 @@ import com.example.spring_boot_project_api.model.Room;
 import com.example.spring_boot_project_api.model.RoomBooking;
 import com.example.spring_boot_project_api.model.User;
 import com.example.spring_boot_project_api.repository.ContractTenantRepository;
+import com.example.spring_boot_project_api.repository.HouseRepository;
 import com.example.spring_boot_project_api.repository.RentalContractRepository;
 import com.example.spring_boot_project_api.repository.RoomRepository;
+import com.example.spring_boot_project_api.repository.TenantRepository;
 import com.example.spring_boot_project_api.repository.UserHouseAccessRepository;
 import com.example.spring_boot_project_api.repository.UserRepository;
+import com.example.spring_boot_project_api.service.impl.ContractAddressSnapshotHelper;
 import com.example.spring_boot_project_api.service.impl.RentalContractServiceImpl;
 import com.example.spring_boot_project_api.service.RoomBookingService;
 import com.example.spring_boot_project_api.util.SecurityUtils;
@@ -61,11 +66,35 @@ class RentalContractServiceImplTest {
     @Mock private RoomBookingService roomBookingService;
     @Mock private OwnerSettingService ownerSettingService;
     @Mock private UserRepository userRepository;
-    @Mock private ContractTenantRepository tenantRepository;
+    @Mock private HouseRepository houseRepository;
+    @Mock private TenantRepository tenantRepository;
+    @Mock private ContractTenantRepository contractTenantRepository;
     @Mock private ContractTenantService tenantService;
     @Spy private RentalContractMapper contractMapper = new RentalContractMapper();
+    @Mock private ContractAddressSnapshotHelper snapshotHelper;
 
     @InjectMocks private RentalContractServiceImpl rentalContractService;
+
+    @BeforeEach
+    void setUpSnapshotHelper() {
+        ContractAddressSnapshotHelper realHelper = new ContractAddressSnapshotHelper(ownerSettingService, userRepository);
+        lenient().doAnswer(inv -> {
+            realHelper.snapshotOwner(inv.getArgument(0), inv.getArgument(1));
+            return null;
+        }).when(snapshotHelper).snapshotOwner(any(), any());
+        lenient().doAnswer(inv -> {
+            realHelper.snapshotTenant(inv.getArgument(0), inv.getArgument(1));
+            return null;
+        }).when(snapshotHelper).snapshotTenant(any(), any());
+        lenient().doAnswer(inv -> {
+            realHelper.snapshotHouse(inv.getArgument(0), inv.getArgument(1));
+            return null;
+        }).when(snapshotHelper).snapshotHouse(any(), any());
+        lenient().doAnswer(inv -> {
+            realHelper.snapshotAll(inv.getArgument(0), inv.getArgument(1), inv.getArgument(2), inv.getArgument(3));
+            return null;
+        }).when(snapshotHelper).snapshotAll(any(), any(), any(), any());
+    }
 
     // ---- Contract creation & backend-generated identifiers ----
 

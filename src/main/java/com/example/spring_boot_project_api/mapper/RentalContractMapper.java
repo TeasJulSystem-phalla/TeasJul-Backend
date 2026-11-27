@@ -11,29 +11,48 @@ import java.math.BigDecimal;
 @Component
 public class RentalContractMapper {
     public RentalContractResponse toResponse(RentalContract contract) {
-        return new RentalContractResponse(
-                contract.getId(),
-                contract.getOwnerId(),
-                contract.getOwnerFullName(),
-                contract.getOwnerGender(),
-                contract.getOwnerDateOfBirth(),
-                contract.getOwnerNationality(),
-                contract.getOwnerNationalId(),
-                contract.getOwnerAddress(),
-                contract.getOwnerPhone(),
-                contract.getOwnerOccupation(),
-                contract.getContractNo(),
-                contract.getRoomId(),
-                contract.getStartDate(),
-                contract.getEndDate(),
-                contract.getMonthlyRent(),
-                contract.getSecurityDeposit(),
-                contract.getDueDay(),
-                contract.getStatus(),
-                contract.getNotes(),
-                contract.getCreatedAt(),
-                contract.getUpdatedAt()
-        );
+        if (contract == null) {
+            return null;
+        }
+        return RentalContractResponse.builder()
+                .id(contract.getId())
+                .ownerId(contract.getOwnerId())
+                .ownerFullName(contract.getOwnerFullName())
+                .ownerGender(contract.getOwnerGender())
+                .ownerDateOfBirth(contract.getOwnerDateOfBirth())
+                .ownerNationality(contract.getOwnerNationality())
+                .ownerNationalId(contract.getOwnerNationalId())
+                .ownerAddress(contract.getOwnerAddress())
+                .ownerHouseNumber(contract.getOwnerHouseNumber())
+                .ownerStreetNumber(contract.getOwnerStreetNumber())
+                .ownerSangkat(contract.getOwnerSangkat())
+                .ownerKhan(contract.getOwnerKhan())
+                .ownerCityProvince(contract.getOwnerCityProvince())
+                .ownerPhone(contract.getOwnerPhone())
+                .ownerOccupation(contract.getOwnerOccupation())
+                .tenantHouseNumber(contract.getTenantHouseNumber())
+                .tenantStreetNumber(contract.getTenantStreetNumber())
+                .tenantSangkat(contract.getTenantSangkat())
+                .tenantKhan(contract.getTenantKhan())
+                .tenantCityProvince(contract.getTenantCityProvince())
+                .houseHouseNumber(contract.getHouseHouseNumber())
+                .houseStreetNumber(contract.getHouseStreetNumber())
+                .houseSangkat(contract.getHouseSangkat())
+                .houseKhan(contract.getHouseKhan())
+                .houseCityProvince(contract.getHouseCityProvince())
+                .contractNo(contract.getContractNo())
+                .contractNumber(contract.getContractNumber())
+                .roomId(contract.getRoomId())
+                .startDate(contract.getStartDate())
+                .endDate(contract.getEndDate())
+                .monthlyRent(contract.getMonthlyRent())
+                .securityDeposit(contract.getSecurityDeposit())
+                .dueDay(contract.getDueDay())
+                .status(contract.getStatus())
+                .notes(contract.getNotes())
+                .createdAt(contract.getCreatedAt())
+                .updatedAt(contract.getUpdatedAt())
+                .build();
     }
     public RentalContract toEntity(RentalContractRequest request) {
         return RentalContract.builder()

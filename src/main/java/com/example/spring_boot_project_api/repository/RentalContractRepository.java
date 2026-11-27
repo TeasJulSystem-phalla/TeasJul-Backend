@@ -43,6 +43,9 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
 
     boolean existsByContractNo(String contractNo);
 
+    @Query("SELECT MAX(rc.contractNumber) FROM RentalContract rc")
+    Optional<Long> findMaxContractNumber();
+
     // ---- Contract expiration ----
 
     // Active contracts whose end date has already passed must be recognized as

@@ -28,6 +28,18 @@ public class AdminPropertyHouseRequest {
     @Size(max = 500, message = "Address must not exceed 500 characters")
     private String address;
 
+    @Size(max = 100, message = "House number must not exceed 100 characters")
+    private String houseNumber;
+
+    @Size(max = 100, message = "Street number must not exceed 100 characters")
+    private String streetNumber;
+
+    @Size(max = 150, message = "Sangkat must not exceed 150 characters")
+    private String sangkat;
+
+    @Size(max = 150, message = "Khan must not exceed 150 characters")
+    private String khan;
+
     @Size(max = 100, message = "City/Province must not exceed 100 characters")
     private String cityProvince;
 

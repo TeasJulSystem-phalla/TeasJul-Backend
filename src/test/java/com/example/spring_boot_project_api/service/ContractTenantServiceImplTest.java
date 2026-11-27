@@ -56,6 +56,8 @@ class ContractTenantServiceImplTest {
     private HouseAccessService houseAccessService;
     @Mock
     private NotificationService notificationService;
+    @Mock
+    private com.example.spring_boot_project_api.service.impl.ContractAddressSnapshotHelper snapshotHelper;
 
     @InjectMocks
     private ContractTenantServiceImpl contractTenantService;
@@ -141,5 +143,160 @@ class ContractTenantServiceImplTest {
 
         verify(contractTenantRepository, never()).save(any());
         verify(contractTenantMapper, never()).toEntity(any());
+    }
+
+    @Test
+    void addTenant_secondaryTenant_neverSnapshotsPartyB() {
+        Tenant tenant = tenantWith(owner(), TenantStatus.ACTIVE);
+        when(securityUtils.getCurrentUserId()).thenReturn(1L);
+        RentalContract contract = activeContract();
+        when(contractRepository.findById(900L)).thenReturn(java.util.Optional.of(contract));
+        when(houseAccessService.resolveContractHouseId(900L)).thenReturn(12L);
+        when(tenantRepository.findByIdAndOwnerId(50L, 1L)).thenReturn(java.util.Optional.of(tenant));
+        when(tenantRepository.findById(50L)).thenReturn(java.util.Optional.of(tenant));
+        when(contractTenantRepository.isTenantActivelyRenting(eq(50L), any(LocalDate.class))).thenReturn(false);
+
+        ContractTenantRequest secondaryRequest = new ContractTenantRequest(900L, 50L, false, LocalDate.now(), null);
+        ContractTenant secondaryEntity = ContractTenant.builder().id(8L).contractId(900L).tenantId(50L).isPrimary(false)
+                .joinedAt(LocalDate.now()).build();
+        when(contractTenantMapper.toEntity(secondaryRequest)).thenReturn(secondaryEntity);
+        when(contractTenantRepository.save(secondaryEntity)).thenReturn(secondaryEntity);
+        when(contractTenantMapper.toResponse(secondaryEntity)).thenReturn(
+                new ContractTenantResponse(8L, 900L, 50L, false, LocalDate.now(), null,
+                        LocalDateTime.now(), LocalDateTime.now()));
+
+        contractTenantService.addTenantToContract(secondaryRequest);
+
+        verify(snapshotHelper, never()).snapshotTenant(any(), any());
+    }
+
+    @Test
+    void addTenant_primaryTenant_notSnapshottedWhenPrimaryAlreadyExists() {
+        Tenant tenant = tenantWith(owner(), TenantStatus.ACTIVE);
+        when(securityUtils.getCurrentUserId()).thenReturn(1L);
+        RentalContract contract = activeContract();
+        when(contractRepository.findById(900L)).thenReturn(java.util.Optional.of(contract));
+        when(houseAccessService.resolveContractHouseId(900L)).thenReturn(12L);
+        when(tenantRepository.findByIdAndOwnerId(50L, 1L)).thenReturn(java.util.Optional.of(tenant));
+        when(tenantRepository.findById(50L)).thenReturn(java.util.Optional.of(tenant));
+        when(contractTenantRepository.isTenantActivelyRenting(eq(50L), any(LocalDate.class))).thenReturn(false);
+        when(contractTenantRepository.existsByContractIdAndIsPrimaryTrue(900L)).thenReturn(true);
+
+        ContractTenantRequest primaryRequest = new ContractTenantRequest(900L, 50L, true, LocalDate.now(), null);
+        ContractTenant primaryEntity = ContractTenant.builder().id(9L).contractId(900L).tenantId(50L).isPrimary(true)
+                .joinedAt(LocalDate.now()).build();
+        when(contractTenantMapper.toEntity(primaryRequest)).thenReturn(primaryEntity);
+        when(contractTenantRepository.save(primaryEntity)).thenReturn(primaryEntity);
+        when(contractTenantMapper.toResponse(primaryEntity)).thenReturn(
+                new ContractTenantResponse(9L, 900L, 50L, true, LocalDate.now(), null,
+                        LocalDateTime.now(), LocalDateTime.now()));
+
+        contractTenantService.addTenantToContract(primaryRequest);
+
+        verify(snapshotHelper, never()).snapshotTenant(any(), any());
+    }
+
+    @Test
+    void addTenant_primaryTenant_doesNotOverwriteExistingNonNullSnapshot() {
+        Tenant tenant = tenantWith(owner(), TenantStatus.ACTIVE);
+        when(securityUtils.getCurrentUserId()).thenReturn(1L);
+        RentalContract contract = activeContract();
+        contract.setTenantCityProvince("Phnom Penh");
+        when(contractRepository.findById(900L)).thenReturn(java.util.Optional.of(contract));
+        when(houseAccessService.resolveContractHouseId(900L)).thenReturn(12L);
+        when(tenantRepository.findByIdAndOwnerId(50L, 1L)).thenReturn(java.util.Optional.of(tenant));
+        when(tenantRepository.findById(50L)).thenReturn(java.util.Optional.of(tenant));
+        when(contractTenantRepository.isTenantActivelyRenting(eq(50L), any(LocalDate.class))).thenReturn(false);
+        when(contractTenantRepository.existsByContractIdAndIsPrimaryTrue(900L)).thenReturn(false);
+
+        ContractTenantRequest primaryRequest = new ContractTenantRequest(900L, 50L, true, LocalDate.now(), null);
+        ContractTenant primaryEntity = ContractTenant.builder().id(10L).contractId(900L).tenantId(50L).isPrimary(true)
+                .joinedAt(LocalDate.now()).build();
+        when(contractTenantMapper.toEntity(primaryRequest)).thenReturn(primaryEntity);
+        when(contractTenantRepository.save(primaryEntity)).thenReturn(primaryEntity);
+        when(contractTenantMapper.toResponse(primaryEntity)).thenReturn(
+                new ContractTenantResponse(10L, 900L, 50L, true, LocalDate.now(), null,
+                        LocalDateTime.now(), LocalDateTime.now()));
+
+        contractTenantService.addTenantToContract(primaryRequest);
+
+        verify(snapshotHelper, never()).snapshotTenant(any(), any());
+    }
+
+    @Test
+    void addTenant_primaryTenant_withNullAddressFields_snapshotsAndAssignsCorrectly() {
+        Tenant tenant = tenantWith(owner(), TenantStatus.ACTIVE);
+        stubHappyPath(tenant);
+        when(contractTenantRepository.isTenantActivelyRenting(eq(50L), any(LocalDate.class)))
+                .thenReturn(false).thenReturn(true);
+        when(contractTenantRepository.existsByContractIdAndIsPrimaryTrue(900L)).thenReturn(false);
+
+        ContractTenantResponse response = contractTenantService.addTenantToContract(request());
+
+        verify(snapshotHelper).snapshotTenant(any(RentalContract.class), eq(tenant));
+        verify(contractRepository).save(any(RentalContract.class));
+        assertThat(response.isPrimary()).isTrue();
+    }
+
+    @Test
+    void addTenant_rejectsActivelyRentingTenant() {
+        Tenant tenant = tenantWith(owner(), TenantStatus.ACTIVE);
+        when(securityUtils.getCurrentUserId()).thenReturn(1L);
+        when(contractRepository.findById(900L)).thenReturn(java.util.Optional.of(activeContract()));
+        when(houseAccessService.resolveContractHouseId(900L)).thenReturn(12L);
+        when(tenantRepository.findByIdAndOwnerId(50L, 1L)).thenReturn(java.util.Optional.of(tenant));
+        when(contractTenantRepository.isTenantActivelyRenting(eq(50L), any(LocalDate.class))).thenReturn(true);
+
+        assertThatThrownBy(() -> contractTenantService.addTenantToContract(request()))
+                .isInstanceOf(DuplicateResourceException.class)
+                .hasMessageContaining("currently renting another unit");
+
+        verify(contractTenantRepository, never()).save(any());
+    }
+
+    @Test
+    void updateContractTenant_promoteToPrimary_whenSnapshotNull_snapshotsTenant() {
+        Tenant tenant = tenantWith(owner(), TenantStatus.ACTIVE);
+        when(securityUtils.getCurrentUserId()).thenReturn(1L);
+        RentalContract contract = activeContract();
+        ContractTenant existing = ContractTenant.builder().id(10L).contractId(900L).tenantId(50L).isPrimary(false)
+                .joinedAt(LocalDate.now()).build();
+
+        when(contractTenantRepository.findById(10L)).thenReturn(java.util.Optional.of(existing));
+        when(contractRepository.findById(900L)).thenReturn(java.util.Optional.of(contract));
+        when(houseAccessService.resolveContractHouseId(900L)).thenReturn(12L);
+        when(tenantRepository.findById(50L)).thenReturn(java.util.Optional.of(tenant));
+        when(contractTenantRepository.findByContractIdAndTenantId(900L, 50L)).thenReturn(java.util.Optional.of(existing));
+        when(contractTenantRepository.save(existing)).thenReturn(existing);
+
+        ContractTenantRequest updateRequest = new ContractTenantRequest(900L, 50L, true, LocalDate.now(), null);
+
+        contractTenantService.updateContractTenant(10L, updateRequest);
+
+        verify(snapshotHelper).snapshotTenant(contract, tenant);
+        verify(contractRepository).save(contract);
+    }
+
+    @Test
+    void updateContractTenant_promoteToPrimary_whenSnapshotExists_doesNotOverwrite() {
+        Tenant tenant = tenantWith(owner(), TenantStatus.ACTIVE);
+        when(securityUtils.getCurrentUserId()).thenReturn(1L);
+        RentalContract contract = activeContract();
+        contract.setTenantCityProvince("Existing Province");
+        ContractTenant existing = ContractTenant.builder().id(10L).contractId(900L).tenantId(50L).isPrimary(false)
+                .joinedAt(LocalDate.now()).build();
+
+        when(contractTenantRepository.findById(10L)).thenReturn(java.util.Optional.of(existing));
+        when(contractRepository.findById(900L)).thenReturn(java.util.Optional.of(contract));
+        when(houseAccessService.resolveContractHouseId(900L)).thenReturn(12L);
+        when(tenantRepository.findById(50L)).thenReturn(java.util.Optional.of(tenant));
+        when(contractTenantRepository.findByContractIdAndTenantId(900L, 50L)).thenReturn(java.util.Optional.of(existing));
+        when(contractTenantRepository.save(existing)).thenReturn(existing);
+
+        ContractTenantRequest updateRequest = new ContractTenantRequest(900L, 50L, true, LocalDate.now(), null);
+
+        contractTenantService.updateContractTenant(10L, updateRequest);
+
+        verify(snapshotHelper, never()).snapshotTenant(any(), any());
     }
 }

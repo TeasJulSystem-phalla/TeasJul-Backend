@@ -15,6 +15,10 @@ public record HouseResponse(
         String slug,
         String code,
         String address,
+        String houseNumber,
+        String streetNumber,
+        String sangkat,
+        String khan,
         String postalCode,
         BigDecimal latitude,
         BigDecimal longitude,
@@ -38,6 +42,20 @@ public record HouseResponse(
         String primaryImage
 ) {
 
+    public HouseResponse(Long id, Long ownerId, String name, String slug, String code,
+            String address, String postalCode, BigDecimal latitude, BigDecimal longitude,
+            String cityProvince, String googleMapsUrl, Integer totalRooms, Integer availableRooms,
+            String description, HouseStatus status, PropertyType propertyType,
+            Furnishing furnishing, LocalDate availableFrom, BigDecimal advancePayment,
+            Integer bedrooms, Integer bathrooms, BigDecimal areaSqm, BigDecimal landSizeSqm,
+            Integer numberOfFloors, LocalDateTime createdAt, LocalDateTime updatedAt,
+            String primaryImage) {
+        this(id, ownerId, name, slug, code, address, null, null, null, null, postalCode, latitude,
+                longitude, cityProvince, googleMapsUrl, totalRooms, availableRooms, description,
+                status, propertyType, furnishing, availableFrom, advancePayment, bedrooms,
+                bathrooms, areaSqm, landSizeSqm, numberOfFloors, createdAt, updatedAt, primaryImage);
+    }
+
     /**
      * Returns a copy of this response with the room counts replaced by the
      * values derived from the actual {@code rooms} records of the house.
@@ -52,6 +70,10 @@ public record HouseResponse(
                 slug,
                 code,
                 address,
+                houseNumber,
+                streetNumber,
+                sangkat,
+                khan,
                 postalCode,
                 latitude,
                 longitude,

@@ -24,6 +24,8 @@ public interface ContractTenantRepository extends JpaRepository<ContractTenant, 
 
     boolean existsByContractIdAndTenantId(Long contractId, Long tenantId);
 
+    boolean existsByContractIdAndIsPrimaryTrue(Long contractId);
+
     @Query("""
         SELECT COUNT(ct) > 0
         FROM ContractTenant ct, RentalContract rc

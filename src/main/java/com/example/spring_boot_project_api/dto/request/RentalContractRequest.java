@@ -22,6 +22,12 @@ public class RentalContractRequest {
     @NotNull(message = "Room ID is required")
     private Long roomId;
 
+    /**
+     * Optional tenant to assign to this contract at creation time.
+     * When provided, Party B structured address is snapshotted onto the contract.
+     */
+    private Long tenantId;
+
     @NotNull(message = "Start date is required")
     private LocalDate startDate;
 

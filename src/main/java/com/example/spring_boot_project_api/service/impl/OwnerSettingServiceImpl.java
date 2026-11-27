@@ -526,6 +526,11 @@ public class OwnerSettingServiceImpl implements OwnerSettingService {
         node.put("nationality", trimToEmpty(party.nationality()));
         node.put("nationalId", trimToEmpty(party.nationalId()));
         node.put("currentAddress", trimToEmpty(party.currentAddress()));
+        node.put("houseNumber", trimToEmpty(party.houseNumber()));
+        node.put("streetNumber", trimToEmpty(party.streetNumber()));
+        node.put("sangkat", trimToEmpty(party.sangkat()));
+        node.put("khan", trimToEmpty(party.khan()));
+        node.put("cityProvince", trimToEmpty(party.cityProvince()));
         node.put("phone", trimToEmpty(party.phone()));
         node.put("occupation", trimToEmpty(party.occupation()));
         return node;
@@ -543,6 +548,11 @@ public class OwnerSettingServiceImpl implements OwnerSettingService {
         node.put("nationality", "");
         node.put("nationalId", "");
         node.put("currentAddress", "");
+        node.put("houseNumber", "");
+        node.put("streetNumber", "");
+        node.put("sangkat", "");
+        node.put("khan", "");
+        node.put("cityProvince", "");
         node.put("phone", trimToEmpty(owner == null ? null : owner.getPhone()));
         node.put("occupation", "");
         return node;
@@ -560,12 +570,17 @@ public class OwnerSettingServiceImpl implements OwnerSettingService {
                 getTextOrDefault(party, "nationality", ""),
                 getTextOrDefault(party, "nationalId", ""),
                 getTextOrDefault(party, "currentAddress", ""),
+                getTextOrDefault(party, "houseNumber", ""),
+                getTextOrDefault(party, "streetNumber", ""),
+                getTextOrDefault(party, "sangkat", ""),
+                getTextOrDefault(party, "khan", ""),
+                getTextOrDefault(party, "cityProvince", ""),
                 getTextOrDefault(party, "phone", ""),
                 getTextOrDefault(party, "occupation", ""));
     }
 
     private static OwnerContractInfoResponse emptyContractInfo() {
-        return new OwnerContractInfoResponse("", null, null, "", "", "", "", "");
+        return new OwnerContractInfoResponse("", null, null, "", "", "", "", "", "", "", "", "", "");
     }
 
     private Gender genderOrNull(JsonNode node, String field) {
